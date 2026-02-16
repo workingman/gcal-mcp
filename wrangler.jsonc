@@ -18,10 +18,24 @@
       "binding": "GOOGLE_TOKENS_KV",
       "id": "78fde26001e547f3823bf30de15ed49b"
     }
-  ]
+  ],
 
-  // Durable Objects will be configured in issue #13
-  // "durable_objects": {
-  //   "bindings": []
-  // }
+  // Durable Objects for MCP server instances
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CALENDAR_MCP",
+        "class_name": "CalendarMCP",
+        "script_name": "calendar-mcp"
+      }
+    ]
+  },
+
+  // Migration for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CalendarMCP"]
+    }
+  ]
 }

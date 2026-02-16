@@ -71,7 +71,7 @@ export async function listEvents(
   )}/events?${searchParams}`;
 
   const response = await apiFetch(accessToken, url);
-  const data = await response.json();
+  const data = (await response.json()) as { items?: CalendarEvent[]; nextPageToken?: string };
 
   let events: CalendarEvent[] = data.items || [];
 
@@ -84,7 +84,7 @@ export async function listEvents(
     )}/events?${searchParams}`;
 
     const pageResponse = await apiFetch(accessToken, pageUrl);
-    const pageData = await pageResponse.json();
+    const pageData = (await pageResponse.json()) as { items?: CalendarEvent[]; nextPageToken?: string };
 
     events = events.concat(pageData.items || []);
     pageToken = pageData.nextPageToken;
@@ -184,7 +184,7 @@ export async function listCalendars(accessToken: string): Promise<Calendar[]> {
   const url = `${GOOGLE_CALENDAR_API_BASE}/users/me/calendarList`;
 
   const response = await apiFetch(accessToken, url);
-  const data = await response.json();
+  const data = (await response.json()) as { items?: Calendar[] };
 
   return data.items || [];
 }
