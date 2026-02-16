@@ -8,7 +8,7 @@ import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types.ts';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto.ts';
 import { computeKVKey, validateSession } from './session.ts';
 import { AuditLogger } from './audit.ts';
-import { listAllEvents, getEvent, freebusy, createEvent } from './calendar-api.ts';
+import { listAllEvents, getEvent, freebusy, createEvent, updateEvent } from './calendar-api.ts';
 import { parseDateRange } from './date-utils.ts';
 import { toMcpErrorResponse } from './error-formatter.ts';
 
@@ -683,23 +683,71 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
+      // Parse parameters
+      const eventId = params.event_id as string;
+      const newStart = params.new_start as string;
+      const newEnd = params.new_end as string;
+      const calendarId = (params.calendar_id as string) || 'primary';
+
+      // Validate required parameters
+      if (!eventId) {
+        return toMcpErrorResponse('Missing required parameter: event_id');
+      }
+      if (!newStart) {
+        return toMcpErrorResponse('Missing required parameter: new_start');
+      }
+      if (!newEnd) {
+        return toMcpErrorResponse('Missing required parameter: new_end');
+      }
+
+      // Validate ISO 8601 format
+      const startDate = new Date(newStart);
+      const endDate = new Date(newEnd);
+      if (isNaN(startDate.getTime())) {
+        return toMcpErrorResponse('Invalid new_start time format. Use ISO 8601 format (e.g., 2026-02-20T14:00:00-08:00)');
+      }
+      if (isNaN(endDate.getTime())) {
+        return toMcpErrorResponse('Invalid new_end time format. Use ISO 8601 format (e.g., 2026-02-20T15:00:00-08:00)');
+      }
+
+      if (startDate >= endDate) {
+        return toMcpErrorResponse('new_start must be before new_end');
+      }
+
+      // Update event with new times
+      const updatedEvent = await updateEvent(
+        freshTokens.access_token,
+        calendarId,
+        eventId,
+        {
+          start: {
+            dateTime: newStart,
+          },
+          end: {
+            dateTime: newEnd,
+          },
+        }
+      );
+
+      // Format confirmation
+      const parts: string[] = [];
+      parts.push('Event rescheduled successfully!');
+      parts.push('');
+      parts.push(`Event ID: ${updatedEvent.id}`);
+      parts.push(`Title: ${updatedEvent.summary}`);
+      parts.push(`New time: ${startDate.toLocaleString()} - ${endDate.toLocaleTimeString()}`);
+      parts.push(`Calendar: ${calendarId}`);
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] move_event called with params: ${JSON.stringify(params)}`,
+            text: parts.join('\n'),
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
