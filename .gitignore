@@ -1,3 +1,46 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+*.tgz
+
+# TypeScript
+*.tsbuildinfo
+dist/
+build/
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+wrangler.toml.local
+worker/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Test Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
 # Claude sessions (local working data)
 claude-sessions/
 
@@ -7,6 +50,3 @@ claude-sessions/
 
 # Cache
 .cache/
-
-# OS files
-.DS_Store
