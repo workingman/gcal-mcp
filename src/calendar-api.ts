@@ -469,18 +469,46 @@ export async function listAllEvents(
 
 /**
  * Query free/busy availability for specified time range
+ * Defaults to all accessible calendars if none specified
+ *
+ * @param accessToken Google OAuth access token
+ * @param timeMin Start of time range (ISO 8601)
+ * @param timeMax End of time range (ISO 8601)
+ * @param options Optional parameters
+ * @param options.calendarIds Specific calendar IDs to query (defaults to all accessible)
+ * @param options.kv KV namespace for calendar list caching
+ * @param options.userIdHash User ID hash for cache key isolation
+ * @returns FreeBusyResponse with busy time blocks per calendar
  */
 export async function freebusy(
   accessToken: string,
   timeMin: string,
   timeMax: string,
-  calendarIds?: string[]
+  options?: {
+    calendarIds?: string[];
+    kv?: KVNamespace;
+    userIdHash?: string;
+  }
 ): Promise<FreeBusyResponse> {
   const url = `${GOOGLE_CALENDAR_API_BASE}/freeBusy`;
 
-  const items = calendarIds
-    ? calendarIds.map((id) => ({ id }))
-    : [{ id: 'primary' }];
+  // Default to all accessible calendars if none specified
+  let items: Array<{ id: string }>;
+  if (options?.calendarIds) {
+    items = options.calendarIds.map((id) => ({ id }));
+  } else {
+    // Fetch all calendars and query all of them
+    try {
+      const calendars = await listCalendars(accessToken, {
+        kv: options?.kv,
+        userIdHash: options?.userIdHash,
+      });
+      items = calendars.map((cal) => ({ id: cal.id }));
+    } catch (error) {
+      // Fallback to primary calendar if list fails
+      items = [{ id: 'primary' }];
+    }
+  }
 
   const response = await apiFetch(accessToken, url, {
     method: 'POST',

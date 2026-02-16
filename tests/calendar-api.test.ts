@@ -983,7 +983,7 @@ describe('Google Calendar API Client', () => {
   });
 
   describe('freebusy', () => {
-    it('should query free/busy availability', async () => {
+    it('should query free/busy availability for specific calendars', async () => {
       const mockFreeBusy: FreeBusyResponse = {
         calendars: {
           primary: {
@@ -1001,17 +1001,142 @@ describe('Google Calendar API Client', () => {
 
       mockFetch(mockFreeBusy);
 
-      const result = await freebusy(
-        'test_token',
-        '2026-02-20T00:00:00Z',
-        '2026-02-21T00:00:00Z'
-      );
+      const result = await freebusy('test_token', '2026-02-20T00:00:00Z', '2026-02-21T00:00:00Z', {
+        calendarIds: ['primary'],
+      });
 
       assert.strictEqual(result.calendars.primary.busy.length, 1);
-      assert.strictEqual(
-        result.calendars.primary.busy[0].start,
-        '2026-02-20T10:00:00-08:00'
+      assert.strictEqual(result.calendars.primary.busy[0].start, '2026-02-20T10:00:00-08:00');
+    });
+
+    it('should return empty busy array when completely free', async () => {
+      const mockFreeBusy: FreeBusyResponse = {
+        calendars: {
+          primary: {
+            busy: [],
+          },
+        },
+        timeMin: '2026-02-20T00:00:00Z',
+        timeMax: '2026-02-21T00:00:00Z',
+      };
+
+      mockFetch(mockFreeBusy);
+
+      const result = await freebusy('test_token', '2026-02-20T00:00:00Z', '2026-02-21T00:00:00Z', {
+        calendarIds: ['primary'],
+      });
+
+      assert.strictEqual(result.calendars.primary.busy.length, 0);
+    });
+
+    it('should query multiple calendars', async () => {
+      const mockFreeBusy: FreeBusyResponse = {
+        calendars: {
+          primary: {
+            busy: [
+              {
+                start: '2026-02-20T10:00:00-08:00',
+                end: '2026-02-20T11:00:00-08:00',
+              },
+            ],
+          },
+          'work@example.com': {
+            busy: [
+              {
+                start: '2026-02-20T14:00:00-08:00',
+                end: '2026-02-20T15:00:00-08:00',
+              },
+            ],
+          },
+        },
+        timeMin: '2026-02-20T00:00:00Z',
+        timeMax: '2026-02-21T00:00:00Z',
+      };
+
+      mockFetch(mockFreeBusy);
+
+      const result = await freebusy('test_token', '2026-02-20T00:00:00Z', '2026-02-21T00:00:00Z', {
+        calendarIds: ['primary', 'work@example.com'],
+      });
+
+      assert.strictEqual(result.calendars.primary.busy.length, 1);
+      assert.strictEqual(result.calendars['work@example.com'].busy.length, 1);
+    });
+
+    it('should handle 400 error for invalid time range', async () => {
+      mockFetch({ error: { message: 'Invalid time range' } }, 400);
+
+      await assert.rejects(
+        async () =>
+          freebusy('test_token', '2026-02-21T00:00:00Z', '2026-02-20T00:00:00Z', {
+            calendarIds: ['primary'],
+          }),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiError');
+          assert.strictEqual((error as any).statusCode, 400);
+          return true;
+        },
+        'Should throw GoogleApiError on 400 for invalid time range'
       );
+    });
+
+    it('should default to all accessible calendars when none specified', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'Primary Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+        {
+          id: 'work@example.com',
+          summary: 'Work Calendar',
+          timeZone: 'America/Vancouver',
+          accessRole: 'writer',
+        },
+      ];
+
+      const mockFreeBusy: FreeBusyResponse = {
+        calendars: {
+          primary: { busy: [] },
+          'work@example.com': { busy: [] },
+        },
+        timeMin: '2026-02-20T00:00:00Z',
+        timeMax: '2026-02-21T00:00:00Z',
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else if (urlStr.includes('/freeBusy')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => mockFreeBusy,
+            text: async () => JSON.stringify(mockFreeBusy),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const result = await freebusy('test_token', '2026-02-20T00:00:00Z', '2026-02-21T00:00:00Z');
+
+      assert.ok(result.calendars.primary, 'Should include primary calendar');
+      assert.ok(result.calendars['work@example.com'], 'Should include work calendar');
     });
   });
 
