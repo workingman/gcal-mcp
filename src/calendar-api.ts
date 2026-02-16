@@ -4,6 +4,12 @@
 
 import type { CalendarEvent, Calendar, FreeBusyResponse } from './types';
 
+// KVNamespace type for Cloudflare Workers KV
+type KVNamespace = {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+};
+
 const GOOGLE_CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
@@ -345,12 +351,73 @@ export async function freebusy(
 
 /**
  * List all calendars the user has access to
+ * Supports optional KV caching (1 hour TTL) to reduce API calls
+ *
+ * @param accessToken Google OAuth access token
+ * @param options Optional configuration for caching
+ * @param options.kv KV namespace for caching (optional)
+ * @param options.userIdHash User ID hash for cache key isolation (required if kv provided)
+ * @returns Array of Calendar objects
  */
-export async function listCalendars(accessToken: string): Promise<Calendar[]> {
-  const url = `${GOOGLE_CALENDAR_API_BASE}/users/me/calendarList`;
+export async function listCalendars(
+  accessToken: string,
+  options?: {
+    kv?: KVNamespace;
+    userIdHash?: string;
+  }
+): Promise<Calendar[]> {
+  const CACHE_TTL_MS = 3600000; // 1 hour
 
+  // Check cache if KV is provided
+  if (options?.kv && options?.userIdHash) {
+    const cacheKey = `calendar_list:${options.userIdHash}`;
+    try {
+      const cached = await options.kv.get(cacheKey);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached) as {
+          data: Calendar[];
+          timestamp: number;
+        };
+        if (Date.now() - timestamp < CACHE_TTL_MS) {
+          return data;
+        }
+      }
+    } catch (error) {
+      // Log cache read error but continue to API fetch
+      console.warn(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        message: 'Cache read failed, falling back to API',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+
+  // Fetch from API
+  const url = `${GOOGLE_CALENDAR_API_BASE}/users/me/calendarList`;
   const response = await apiFetch(accessToken, url);
   const data = (await response.json()) as { items?: Calendar[] };
+  const calendars = data.items || [];
 
-  return data.items || [];
+  // Update cache if KV is provided
+  if (options?.kv && options?.userIdHash) {
+    const cacheKey = `calendar_list:${options.userIdHash}`;
+    try {
+      await options.kv.put(
+        cacheKey,
+        JSON.stringify({
+          data: calendars,
+          timestamp: Date.now(),
+        })
+      );
+    } catch (error) {
+      // Log cache write error but don't fail the request
+      console.warn(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        message: 'Cache write failed',
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+
+  return calendars;
 }

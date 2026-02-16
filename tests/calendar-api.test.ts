@@ -226,7 +226,7 @@ describe('Google Calendar API Client', () => {
   });
 
   describe('listCalendars', () => {
-    it('should list all accessible calendars', async () => {
+    it('should list all accessible calendars without cache', async () => {
       const mockCalendars: Calendar[] = [
         {
           id: 'primary',
@@ -250,6 +250,137 @@ describe('Google Calendar API Client', () => {
       assert.strictEqual(calendars.length, 2);
       assert.strictEqual(calendars[0].id, 'primary');
       assert.strictEqual(calendars[1].id, 'work@example.com');
+    });
+
+    it('should return cached calendar list when cache is fresh', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'Cached Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+      ];
+
+      const mockKV = {
+        get: async (key: string) => {
+          if (key === 'calendar_list:test_user_hash') {
+            return JSON.stringify({
+              data: mockCalendars,
+              timestamp: Date.now() - 1000, // 1 second ago (fresh)
+            });
+          }
+          return null;
+        },
+        put: async () => {},
+      };
+
+      let fetchCalled = false;
+      globalThis.fetch = (async (): Promise<Response> => {
+        fetchCalled = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [] }),
+          text: async () => JSON.stringify({ items: [] }),
+        } as Response;
+      }) as typeof fetch;
+
+      const calendars = await listCalendars('test_token', {
+        kv: mockKV,
+        userIdHash: 'test_user_hash',
+      });
+
+      assert.strictEqual(fetchCalled, false, 'Should not call API when cache is fresh');
+      assert.strictEqual(calendars.length, 1);
+      assert.strictEqual(calendars[0].summary, 'Cached Calendar');
+    });
+
+    it('should fetch from API when cache is stale', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'Fresh Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+      ];
+
+      let putCalled = false;
+      const mockKV = {
+        get: async (key: string) => {
+          if (key === 'calendar_list:test_user_hash') {
+            return JSON.stringify({
+              data: [],
+              timestamp: Date.now() - 3700000, // >1 hour ago (stale)
+            });
+          }
+          return null;
+        },
+        put: async (key: string, value: string) => {
+          putCalled = true;
+          const parsed = JSON.parse(value);
+          assert.ok(parsed.data, 'Cache should include data');
+          assert.ok(parsed.timestamp, 'Cache should include timestamp');
+        },
+      };
+
+      mockFetch({ items: mockCalendars });
+
+      const calendars = await listCalendars('test_token', {
+        kv: mockKV,
+        userIdHash: 'test_user_hash',
+      });
+
+      assert.strictEqual(putCalled, true, 'Should update cache after API fetch');
+      assert.strictEqual(calendars.length, 1);
+      assert.strictEqual(calendars[0].summary, 'Fresh Calendar');
+    });
+
+    it('should fetch from API when cache is empty', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'New Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+      ];
+
+      let putCalled = false;
+      const mockKV = {
+        get: async () => null, // No cache
+        put: async (key: string, value: string) => {
+          putCalled = true;
+        },
+      };
+
+      mockFetch({ items: mockCalendars });
+
+      const calendars = await listCalendars('test_token', {
+        kv: mockKV,
+        userIdHash: 'test_user_hash',
+      });
+
+      assert.strictEqual(putCalled, true, 'Should populate cache after API fetch');
+      assert.strictEqual(calendars.length, 1);
+      assert.strictEqual(calendars[0].summary, 'New Calendar');
+    });
+
+    it('should handle 403 error from API with clear message', async () => {
+      mockFetch({ error: { message: 'Forbidden' } }, 403);
+
+      await assert.rejects(
+        async () => listCalendars('test_token'),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiPermissionError');
+          return true;
+        },
+        'Should throw GoogleApiPermissionError on 403'
+      );
     });
   });
 
