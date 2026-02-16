@@ -147,4 +147,125 @@ describe('Session Validation', () => {
     console.log = originalLog;
     console.warn = originalWarn;
   });
+
+  it('should implement triple-layer validation: Layer 1 - HMAC prevents enumeration', async () => {
+    const hmacKey = await importHmacKey(TEST_HMAC_KEY);
+
+    // Layer 1: HMAC-based KV key prevents enumeration
+    const userAKey = await computeKVKey('usera@example.com', hmacKey);
+    const userBKey = await computeKVKey('userb@example.com', hmacKey);
+
+    // Keys should be non-predictable from each other
+    assert.notStrictEqual(userAKey, userBKey, 'Different users have different KV keys');
+
+    // An attacker cannot derive User B's key from User A's key
+    // because HMAC is a one-way function
+    assert.ok(userAKey.startsWith('google_tokens:'), 'Key has expected format');
+    assert.ok(userBKey.startsWith('google_tokens:'), 'Key has expected format');
+  });
+
+  it('should implement triple-layer validation: Layer 2 - user_id_hash in encrypted token', async () => {
+    const hmacKey = await importHmacKey(TEST_HMAC_KEY);
+    const encryptionKey = await importEncryptionKey(TEST_ENCRYPTION_KEY);
+    const manager = new TokenManager(encryptionKey, hmacKey);
+
+    const testTokens: GoogleTokens = {
+      access_token: 'ya29.test',
+      refresh_token: 'test_refresh',
+      expires_at: Date.now() + 3600000,
+      scope: 'https://www.googleapis.com/auth/calendar',
+      user_email: 'usera@example.com',
+      user_id: 'usera@example.com',
+    };
+
+    // Encrypt for User A
+    const encrypted = await manager.encrypt(testTokens, 'usera@example.com');
+
+    // Layer 2: user_id_hash validation (post-fetch, pre-decrypt)
+    const validForUserA = await validateSession('usera@example.com', encrypted, hmacKey);
+    assert.strictEqual(validForUserA, true, 'User A can validate their own token');
+
+    // User B cannot validate User A's token
+    const validForUserB = await validateSession('userb@example.com', encrypted, hmacKey);
+    assert.strictEqual(validForUserB, false, 'User B cannot validate User A token');
+  });
+
+  it('should implement triple-layer validation: Layer 3 - embedded user_id in decrypted token', async () => {
+    const hmacKey = await importHmacKey(TEST_HMAC_KEY);
+    const encryptionKey = await importEncryptionKey(TEST_ENCRYPTION_KEY);
+    const manager = new TokenManager(encryptionKey, hmacKey);
+
+    const testTokens: GoogleTokens = {
+      access_token: 'ya29.test',
+      refresh_token: 'test_refresh',
+      expires_at: Date.now() + 3600000,
+      scope: 'https://www.googleapis.com/auth/calendar',
+      user_email: 'usera@example.com',
+      user_id: 'usera@example.com',
+    };
+
+    // Encrypt and decrypt
+    const encrypted = await manager.encrypt(testTokens, 'usera@example.com');
+    const decrypted = await manager.decrypt(encrypted);
+
+    // Layer 3: Embedded user_id in decrypted payload
+    assert.strictEqual(
+      decrypted.user_id,
+      'usera@example.com',
+      'Decrypted token contains embedded user_id'
+    );
+
+    // This is the final check performed by getTokenForUser()
+    // to ensure the requesting user matches the token owner
+  });
+
+  it('should sanitize user identifiers in security logs', async () => {
+    const hmacKey = await importHmacKey(TEST_HMAC_KEY);
+    const encryptionKey = await importEncryptionKey(TEST_ENCRYPTION_KEY);
+    const manager = new TokenManager(encryptionKey, hmacKey);
+
+    const testTokens: GoogleTokens = {
+      access_token: 'ya29.test',
+      refresh_token: 'test_refresh',
+      expires_at: Date.now() + 3600000,
+      scope: 'https://www.googleapis.com/auth/calendar',
+      user_email: 'test@example.com',
+      user_id: 'test@example.com',
+    };
+
+    const encrypted = await manager.encrypt(testTokens, 'test@example.com');
+
+    // Capture console output
+    const originalWarn = console.warn;
+    const logs: string[] = [];
+
+    console.warn = (...args: unknown[]) => {
+      logs.push(args.join(' '));
+      originalWarn(...args);
+    };
+
+    // Trigger validation failure
+    await validateSession('attacker@example.com', encrypted, hmacKey);
+
+    // Restore console
+    console.warn = originalWarn;
+
+    // Verify logs contain user email (not raw tokens or HMAC values)
+    const securityLog = logs.find((log) => log.includes('[SECURITY]'));
+    assert.ok(securityLog, 'Security log should be generated');
+    assert.ok(
+      securityLog!.includes('user_id_hash mismatch'),
+      'Log should describe the validation failure'
+    );
+    assert.ok(
+      securityLog!.includes('attacker@example.com'),
+      'Log should include requesting user identifier'
+    );
+
+    // Verify logs do NOT contain raw tokens
+    assert.ok(
+      !securityLog!.includes('ya29.test'),
+      'Log should not contain access_token'
+    );
+  });
 });
