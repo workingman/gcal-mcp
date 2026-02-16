@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import type { Env } from './env.d';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto';
 import { computeKVKey } from './session';
-import { authorizationPage, successPage, errorPage } from './utils';
+import { authorizationPage, successPage, errorPage, mcpAuthorizationPage } from './utils';
 import { AuditLogger } from './audit.ts';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -18,63 +18,38 @@ const app = new Hono<{ Bindings: Env }>();
  */
 app.get('/authorize', async (c) => {
   const { searchParams } = new URL(c.req.url);
-
-  // Display consent screen requesting user email
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Calendar MCP - Authorization</title>
-        <style>
-          body {
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 600px;
-            margin: 40px auto;
-            padding: 20px;
-            line-height: 1.6;
-          }
-          h1 { color: #333; }
-          form { margin: 20px 0; }
-          label { display: block; margin: 10px 0 5px; font-weight: 500; }
-          input { width: 100%; padding: 8px; font-size: 16px; }
-          button {
-            background: #0066cc;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 15px;
-          }
-          button:hover { background: #0052a3; }
-        </style>
-      </head>
-      <body>
-        <h1>Calendar MCP Authorization</h1>
-        <p>Claude Desktop is requesting access to your Google Calendar through this MCP server.</p>
-        <p>Please enter your email address to establish your session:</p>
-        <form method="POST" action="/approve?${searchParams}">
-          <label for="email">Email Address:</label>
-          <input type="email" id="email" name="email" required placeholder="you@example.com" />
-          <button type="submit">Authorize Access</button>
-        </form>
-      </body>
-    </html>
-  `;
-
-  return c.html(html);
+  return c.html(mcpAuthorizationPage(searchParams.toString()));
 });
 
 /**
  * POST /approve - Complete MCP authorization
  * Captures user email and attaches to session props
+ * Validates email format before storing
  */
 app.post('/approve', async (c) => {
   const formData = await c.req.formData();
   const userEmail = formData.get('email') as string;
 
+  // Validate email is provided
   if (!userEmail) {
-    return c.text('Email is required', 400);
+    return c.html(errorPage('Email address is required.'), 400);
+  }
+
+  // Validate email format (RFC 5322 simplified pattern)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(userEmail)) {
+    return c.html(
+      errorPage(
+        'Invalid email format. Please provide a valid email address (e.g., user@example.com).'
+      ),
+      400
+    );
+  }
+
+  // Additional security: ensure email doesn't contain suspicious patterns
+  if (userEmail.length > 254) {
+    // RFC 5321 max email length
+    return c.html(errorPage('Email address is too long (max 254 characters).'), 400);
   }
 
   // Store user email in session props
