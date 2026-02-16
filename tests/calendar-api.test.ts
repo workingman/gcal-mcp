@@ -597,7 +597,7 @@ describe('Google Calendar API Client', () => {
   });
 
   describe('updateEvent', () => {
-    it('should update an existing event', async () => {
+    it('should update event with only changed fields', async () => {
       const updates: Partial<CalendarEvent> = {
         start: { dateTime: '2026-02-26T14:00:00-08:00' },
         end: { dateTime: '2026-02-26T15:00:00-08:00' },
@@ -606,8 +606,11 @@ describe('Google Calendar API Client', () => {
       const updatedEvent: CalendarEvent = {
         id: 'event123',
         summary: 'Updated Meeting',
+        description: 'Original description preserved',
+        location: 'Original location preserved',
         start: { dateTime: '2026-02-26T14:00:00-08:00' },
         end: { dateTime: '2026-02-26T15:00:00-08:00' },
+        attendees: [{ email: 'attendee@example.com', displayName: 'Attendee' }],
         calendarId: 'primary',
         status: 'confirmed',
         htmlLink: 'https://calendar.google.com/event?eid=event123',
@@ -619,6 +622,63 @@ describe('Google Calendar API Client', () => {
 
       assert.strictEqual(event.id, 'event123');
       assert.strictEqual(event.start.dateTime, '2026-02-26T14:00:00-08:00');
+      assert.strictEqual(event.description, 'Original description preserved');
+      assert.strictEqual(event.attendees?.length, 1);
+    });
+
+    it('should handle 404 error when event not found', async () => {
+      mockFetch({ error: { message: 'Not found' } }, 404);
+
+      await assert.rejects(
+        async () =>
+          updateEvent('test_token', 'primary', 'nonexistent', {
+            start: { dateTime: '2026-02-26T14:00:00-08:00' },
+          }),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiNotFoundError');
+          return true;
+        },
+        'Should throw GoogleApiNotFoundError on 404'
+      );
+    });
+
+    it('should handle 409 conflict error', async () => {
+      mockFetch({ error: { message: 'Conflict: event modified' } }, 409);
+
+      await assert.rejects(
+        async () =>
+          updateEvent('test_token', 'primary', 'event123', {
+            start: { dateTime: '2026-02-26T14:00:00-08:00' },
+          }),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiError');
+          assert.strictEqual((error as any).statusCode, 409);
+          return true;
+        },
+        'Should throw GoogleApiError with 409 status on conflict'
+      );
+    });
+
+    it('should update only specified fields (minimal payload)', async () => {
+      const updates: Partial<CalendarEvent> = {
+        summary: 'New Title',
+      };
+
+      const updatedEvent: CalendarEvent = {
+        id: 'event456',
+        summary: 'New Title',
+        start: { dateTime: '2026-02-20T10:00:00-08:00' },
+        end: { dateTime: '2026-02-20T11:00:00-08:00' },
+        calendarId: 'primary',
+        status: 'confirmed',
+        htmlLink: 'https://calendar.google.com/event?eid=event456',
+      };
+
+      mockFetch(updatedEvent);
+
+      const event = await updateEvent('test_token', 'primary', 'event456', updates);
+
+      assert.strictEqual(event.summary, 'New Title');
     });
   });
 
