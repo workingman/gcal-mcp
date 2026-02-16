@@ -253,14 +253,117 @@ describe('Google Calendar API Client', () => {
     });
   });
 
-  describe('error handling', () => {
-    it('should throw error on 401 response', async () => {
+  describe('error handling and retry logic', () => {
+    it('should throw GoogleApiAuthError on 401 response', async () => {
       mockFetch({ error: { message: 'Invalid credentials' } }, 401);
 
       await assert.rejects(
         async () => listEvents('invalid_token', {}),
-        /Google Calendar API error \(401\)/,
-        'Should throw on 401 response'
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiAuthError');
+          assert.strictEqual((error as any).statusCode, 401);
+          return true;
+        },
+        'Should throw GoogleApiAuthError on 401'
+      );
+    });
+
+    it('should throw GoogleApiPermissionError on 403 response', async () => {
+      mockFetch({ error: { message: 'Forbidden' } }, 403);
+
+      await assert.rejects(
+        async () => listEvents('test_token', {}),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiPermissionError');
+          assert.strictEqual((error as any).statusCode, 403);
+          return true;
+        },
+        'Should throw GoogleApiPermissionError on 403'
+      );
+    });
+
+    it('should throw GoogleApiNotFoundError on 404 response', async () => {
+      mockFetch({ error: { message: 'Not found' } }, 404);
+
+      await assert.rejects(
+        async () => getEvent('test_token', 'nonexistent'),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiNotFoundError');
+          assert.strictEqual((error as any).statusCode, 404);
+          return true;
+        },
+        'Should throw GoogleApiNotFoundError on 404'
+      );
+    });
+
+    it('should retry on 429 rate limit with exponential backoff', async () => {
+      let callCount = 0;
+      globalThis.fetch = (async (): Promise<Response> => {
+        callCount++;
+        if (callCount < 3) {
+          return {
+            ok: false,
+            status: 429,
+            json: async () => ({ error: { message: 'Rate limit exceeded' } }),
+            text: async () => JSON.stringify({ error: { message: 'Rate limit exceeded' } }),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [] }),
+          text: async () => JSON.stringify({ items: [] }),
+        } as Response;
+      }) as typeof fetch;
+
+      const events = await listEvents('test_token', {});
+      assert.strictEqual(callCount, 3, 'Should retry twice before success');
+      assert.strictEqual(events.length, 0);
+    });
+
+    it('should retry on 500 server error with exponential backoff', async () => {
+      let callCount = 0;
+      globalThis.fetch = (async (): Promise<Response> => {
+        callCount++;
+        if (callCount < 2) {
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({ error: { message: 'Internal server error' } }),
+            text: async () => JSON.stringify({ error: { message: 'Internal server error' } }),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [] }),
+          text: async () => JSON.stringify({ items: [] }),
+        } as Response;
+      }) as typeof fetch;
+
+      const events = await listEvents('test_token', {});
+      assert.strictEqual(callCount, 2, 'Should retry once before success');
+      assert.strictEqual(events.length, 0);
+    });
+
+    it('should not retry on 400 client errors', async () => {
+      let callCount = 0;
+      globalThis.fetch = (async (): Promise<Response> => {
+        callCount++;
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: { message: 'Bad request' } }),
+          text: async () => JSON.stringify({ error: { message: 'Bad request' } }),
+        } as Response;
+      }) as typeof fetch;
+
+      await assert.rejects(
+        async () => listEvents('test_token', {}),
+        (error: Error) => {
+          assert.strictEqual(callCount, 1, 'Should not retry on 400 error');
+          return true;
+        }
       );
     });
   });
