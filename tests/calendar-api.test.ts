@@ -8,6 +8,7 @@ import {
   updateEvent,
   freebusy,
   listCalendars,
+  listAllEvents,
 } from '../src/calendar-api.ts';
 import type { CalendarEvent, Calendar, FreeBusyResponse } from '../src/types.ts';
 
@@ -326,6 +327,306 @@ describe('Google Calendar API Client', () => {
 
       assert.strictEqual(event.id, 'event123');
       assert.strictEqual(event.start.dateTime, '2026-02-26T14:00:00-08:00');
+    });
+  });
+
+  describe('listAllEvents', () => {
+    it('should fetch events from all calendars in parallel', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'Primary Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+        {
+          id: 'work@example.com',
+          summary: 'Work Calendar',
+          timeZone: 'America/Vancouver',
+          accessRole: 'writer',
+        },
+      ];
+
+      const primaryEvents: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Personal Event',
+          start: { dateTime: '2026-02-20T10:00:00-08:00' },
+          end: { dateTime: '2026-02-20T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+        },
+      ];
+
+      const workEvents: CalendarEvent[] = [
+        {
+          id: 'event2',
+          summary: 'Work Meeting',
+          start: { dateTime: '2026-02-20T14:00:00-08:00' },
+          end: { dateTime: '2026-02-20T15:00:00-08:00' },
+          calendarId: 'work@example.com',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event2',
+        },
+      ];
+
+      let callCount = 0;
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        callCount++;
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else if (urlStr.includes('calendars/primary/events')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: primaryEvents }),
+            text: async () => JSON.stringify({ items: primaryEvents }),
+          } as Response;
+        } else if (urlStr.includes('calendars/work%40example.com/events')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: workEvents }),
+            text: async () => JSON.stringify({ items: workEvents }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const events = await listAllEvents('test_token', {
+        timeMin: '2026-02-20T00:00:00Z',
+        timeMax: '2026-02-21T00:00:00Z',
+      });
+
+      assert.strictEqual(events.length, 2, 'Should return events from both calendars');
+      assert.strictEqual(events[0].summary, 'Personal Event');
+      assert.strictEqual(events[0].calendarName, 'Primary Calendar');
+      assert.strictEqual(events[1].summary, 'Work Meeting');
+      assert.strictEqual(events[1].calendarName, 'Work Calendar');
+    });
+
+    it('should handle partial failure gracefully', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'Primary Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+        {
+          id: 'work@example.com',
+          summary: 'Work Calendar',
+          timeZone: 'America/Vancouver',
+          accessRole: 'writer',
+        },
+      ];
+
+      const primaryEvents: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Personal Event',
+          start: { dateTime: '2026-02-20T10:00:00-08:00' },
+          end: { dateTime: '2026-02-20T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+        },
+      ];
+
+      let errorLogged = false;
+      const originalError = console.error;
+      console.error = (message: string) => {
+        if (message.includes('Failed to fetch events')) {
+          errorLogged = true;
+        }
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else if (urlStr.includes('calendars/primary/events')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: primaryEvents }),
+            text: async () => JSON.stringify({ items: primaryEvents }),
+          } as Response;
+        } else if (urlStr.includes('calendars/work%40example.com/events')) {
+          // Simulate 403 error for work calendar
+          return {
+            ok: false,
+            status: 403,
+            json: async () => ({ error: { message: 'Forbidden' } }),
+            text: async () => JSON.stringify({ error: { message: 'Forbidden' } }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const events = await listAllEvents('test_token', {
+        timeMin: '2026-02-20T00:00:00Z',
+        timeMax: '2026-02-21T00:00:00Z',
+      });
+
+      console.error = originalError;
+
+      assert.strictEqual(events.length, 1, 'Should return events from successful calendar only');
+      assert.strictEqual(events[0].summary, 'Personal Event');
+      assert.strictEqual(errorLogged, true, 'Should log error for failed calendar');
+    });
+
+    it('should sort events by start time across calendars', async () => {
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'cal1',
+          summary: 'Calendar 1',
+          timeZone: 'America/Vancouver',
+          accessRole: 'owner',
+        },
+        {
+          id: 'cal2',
+          summary: 'Calendar 2',
+          timeZone: 'America/Vancouver',
+          accessRole: 'writer',
+        },
+      ];
+
+      const cal1Events: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Later Event',
+          start: { dateTime: '2026-02-20T15:00:00-08:00' },
+          end: { dateTime: '2026-02-20T16:00:00-08:00' },
+          calendarId: 'cal1',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+        },
+      ];
+
+      const cal2Events: CalendarEvent[] = [
+        {
+          id: 'event2',
+          summary: 'Earlier Event',
+          start: { dateTime: '2026-02-20T09:00:00-08:00' },
+          end: { dateTime: '2026-02-20T10:00:00-08:00' },
+          calendarId: 'cal2',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event2',
+        },
+      ];
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else if (urlStr.includes('calendars/cal1/events')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: cal1Events }),
+            text: async () => JSON.stringify({ items: cal1Events }),
+          } as Response;
+        } else if (urlStr.includes('calendars/cal2/events')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: cal2Events }),
+            text: async () => JSON.stringify({ items: cal2Events }),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const events = await listAllEvents('test_token', {});
+
+      assert.strictEqual(events.length, 2);
+      assert.strictEqual(events[0].summary, 'Earlier Event', 'First event should be earlier one');
+      assert.strictEqual(events[1].summary, 'Later Event', 'Second event should be later one');
+    });
+
+    it('should warn when user has more than 10 calendars', async () => {
+      const mockCalendars: Calendar[] = Array.from({ length: 15 }, (_, i) => ({
+        id: `cal${i}`,
+        summary: `Calendar ${i}`,
+        timeZone: 'America/Vancouver',
+        accessRole: 'owner' as const,
+      }));
+
+      let warnCalled = false;
+      const originalWarn = console.warn;
+      console.warn = (message: string) => {
+        if (message.includes('15 calendars') && message.includes('first 10 only')) {
+          warnCalled = true;
+        }
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else {
+          // Return empty events for all calendars
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: [] }),
+            text: async () => JSON.stringify({ items: [] }),
+          } as Response;
+        }
+      }) as typeof fetch;
+
+      await listAllEvents('test_token', {});
+
+      console.warn = originalWarn;
+
+      assert.strictEqual(warnCalled, true, 'Should warn about >10 calendars');
     });
   });
 

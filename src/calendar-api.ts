@@ -357,6 +357,91 @@ export async function updateEvent(
 }
 
 /**
+ * List events from all accessible calendars in parallel
+ * Fetches calendars first, then queries each calendar in parallel using Promise.allSettled()
+ * Handles partial failures gracefully and enriches events with calendar metadata
+ *
+ * @param accessToken Google OAuth access token
+ * @param params Filtering parameters (timeMin, timeMax, q, attendee)
+ * @param options Optional KV configuration for calendar list caching
+ * @returns Array of CalendarEvent objects from all calendars, sorted by start time
+ */
+export async function listAllEvents(
+  accessToken: string,
+  params: {
+    timeMin?: string;
+    timeMax?: string;
+    q?: string;
+    attendee?: string;
+  },
+  options?: {
+    kv?: KVNamespace;
+    userIdHash?: string;
+  }
+): Promise<CalendarEvent[]> {
+  const MAX_CALENDARS = 10;
+
+  // Step 1: Get all accessible calendars (with caching if KV provided)
+  const calendars = await listCalendars(accessToken, options);
+
+  // Limit to 10 calendars to avoid Workers CPU timeout
+  const calendarsToFetch = calendars.slice(0, MAX_CALENDARS);
+  if (calendars.length > MAX_CALENDARS) {
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      message: `User has ${calendars.length} calendars, fetching from first ${MAX_CALENDARS} only`,
+      totalCalendars: calendars.length,
+      fetchingCalendars: MAX_CALENDARS,
+    }));
+  }
+
+  // Step 2: Fetch events from each calendar in parallel using Promise.allSettled()
+  const eventPromises = calendarsToFetch.map(calendar =>
+    listEvents(accessToken, {
+      calendarId: calendar.id,
+      timeMin: params.timeMin,
+      timeMax: params.timeMax,
+      q: params.q,
+      attendee: params.attendee,
+    })
+  );
+
+  const results = await Promise.allSettled(eventPromises);
+
+  // Step 3: Process results and enrich with calendar metadata
+  const allEvents: CalendarEvent[] = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      const calendar = calendarsToFetch[index];
+      const events = result.value.map(event => ({
+        ...event,
+        calendarId: calendar.id,
+        calendarName: calendar.summary,
+      }));
+      allEvents.push(...events);
+    } else {
+      // Log failure but continue with other calendars
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        message: 'Failed to fetch events from calendar',
+        calendarId: calendarsToFetch[index].id,
+        calendarName: calendarsToFetch[index].summary,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      }));
+    }
+  });
+
+  // Step 4: Sort all events by start time
+  allEvents.sort((a, b) => {
+    const timeA = new Date(a.start.dateTime || a.start.date || '').getTime();
+    const timeB = new Date(b.start.dateTime || b.start.date || '').getTime();
+    return timeA - timeB;
+  });
+
+  return allEvents;
+}
+
+/**
  * Query free/busy availability for specified time range
  */
 export async function freebusy(
