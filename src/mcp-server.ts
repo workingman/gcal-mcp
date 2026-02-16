@@ -8,7 +8,7 @@ import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types.ts';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto.ts';
 import { computeKVKey, validateSession } from './session.ts';
 import { AuditLogger } from './audit.ts';
-import { listAllEvents, getEvent } from './calendar-api.ts';
+import { listAllEvents, getEvent, freebusy } from './calendar-api.ts';
 import { parseDateRange } from './date-utils.ts';
 import { toMcpErrorResponse } from './error-formatter.ts';
 
@@ -473,23 +473,107 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
+      // Parse parameters
+      const startTime = params.start_time as string;
+      const endTime = params.end_time as string;
+
+      if (!startTime || !endTime) {
+        return toMcpErrorResponse('Missing required parameters: start_time and end_time');
+      }
+
+      // Validate ISO 8601 format
+      const startDate = new Date(startTime);
+      const endDate = new Date(endTime);
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return toMcpErrorResponse('Invalid time format. Use ISO 8601 format (e.g., 2026-02-20T09:00:00-08:00)');
+      }
+
+      if (startDate >= endDate) {
+        return toMcpErrorResponse('start_time must be before end_time');
+      }
+
+      // Query free/busy for all calendars
+      const freebusyResponse = await freebusy(
+        freshTokens.access_token,
+        startTime,
+        endTime,
+        {
+          kv: this.env.GOOGLE_TOKENS_KV,
+          userIdHash: tokens.user_id,
+        }
+      );
+
+      // Collect all busy blocks across calendars
+      const allBusyBlocks: Array<{ start: string; end: string; calendar: string }> = [];
+      for (const [calendarId, calendarData] of Object.entries(freebusyResponse.calendars)) {
+        if (calendarData.busy) {
+          calendarData.busy.forEach(block => {
+            allBusyBlocks.push({
+              start: block.start,
+              end: block.end,
+              calendar: calendarId,
+            });
+          });
+        }
+      }
+
+      // Sort busy blocks by start time
+      allBusyBlocks.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+      // Format response
+      const parts: string[] = [];
+      parts.push(`Your availability for ${startDate.toLocaleString()} - ${endDate.toLocaleString()}:`);
+      parts.push('');
+
+      if (allBusyBlocks.length === 0) {
+        parts.push('Free: Entire time range is available');
+      } else {
+        parts.push('Busy:');
+        allBusyBlocks.forEach(block => {
+          const blockStart = new Date(block.start);
+          const blockEnd = new Date(block.end);
+          parts.push(`  • ${blockStart.toLocaleTimeString()} - ${blockEnd.toLocaleTimeString()} (${block.calendar})`);
+        });
+
+        // Calculate free blocks
+        parts.push('');
+        parts.push('Free:');
+        const freeBlocks: Array<{ start: Date; end: Date }> = [];
+
+        let currentTime = startDate;
+        for (const busyBlock of allBusyBlocks) {
+          const busyStart = new Date(busyBlock.start);
+          if (currentTime < busyStart) {
+            freeBlocks.push({ start: new Date(currentTime), end: busyStart });
+          }
+          const busyEnd = new Date(busyBlock.end);
+          currentTime = busyEnd > currentTime ? busyEnd : currentTime;
+        }
+
+        // Add final free block if there's time after last busy block
+        if (currentTime < endDate) {
+          freeBlocks.push({ start: new Date(currentTime), end: endDate });
+        }
+
+        if (freeBlocks.length === 0) {
+          parts.push('  No free time available');
+        } else {
+          freeBlocks.forEach(block => {
+            parts.push(`  • ${block.start.toLocaleTimeString()} - ${block.end.toLocaleTimeString()}`);
+          });
+        }
+      }
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] get_free_busy called with params: ${JSON.stringify(params)}`,
+            text: parts.join('\n'),
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
