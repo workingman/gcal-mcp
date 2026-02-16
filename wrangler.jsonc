@@ -1,0 +1,18 @@
+{
+  // Cloudflare Workers configuration for Calendar MCP Server
+  "name": "calendar-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Node.js compatibility for Web Crypto API and other Node.js features
+  "node_compat": true,
+
+  // KV namespaces will be added in issue #11
+  // "kv_namespaces": [],
+
+  // Durable Objects will be configured in issue #13
+  // "durable_objects": {
+  //   "bindings": []
+  // }
+}
