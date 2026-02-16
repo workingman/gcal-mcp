@@ -8,7 +8,7 @@ import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types.ts';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto.ts';
 import { computeKVKey, validateSession } from './session.ts';
 import { AuditLogger } from './audit.ts';
-import { listAllEvents, getEvent, freebusy } from './calendar-api.ts';
+import { listAllEvents, getEvent, freebusy, createEvent } from './calendar-api.ts';
 import { parseDateRange } from './date-utils.ts';
 import { toMcpErrorResponse } from './error-formatter.ts';
 
@@ -582,23 +582,99 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
+      // Parse parameters
+      const title = params.title as string;
+      const start = params.start as string;
+      const end = params.end as string;
+      const calendarId = (params.calendar_id as string) || 'primary';
+      const attendees = params.attendees as string | string[] | undefined;
+      const location = params.location as string | undefined;
+      const description = params.description as string | undefined;
+
+      // Validate required parameters
+      if (!title) {
+        return toMcpErrorResponse('Missing required parameter: title');
+      }
+      if (!start) {
+        return toMcpErrorResponse('Missing required parameter: start');
+      }
+      if (!end) {
+        return toMcpErrorResponse('Missing required parameter: end');
+      }
+
+      // Validate ISO 8601 format
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      if (isNaN(startDate.getTime())) {
+        return toMcpErrorResponse('Invalid start time format. Use ISO 8601 format (e.g., 2026-02-20T14:00:00-08:00)');
+      }
+      if (isNaN(endDate.getTime())) {
+        return toMcpErrorResponse('Invalid end time format. Use ISO 8601 format (e.g., 2026-02-20T15:00:00-08:00)');
+      }
+
+      if (startDate >= endDate) {
+        return toMcpErrorResponse('start time must be before end time');
+      }
+
+      // Build event data
+      const eventData: Record<string, unknown> = {
+        summary: title,
+        start: {
+          dateTime: start,
+        },
+        end: {
+          dateTime: end,
+        },
+      };
+
+      if (location) {
+        eventData.location = location;
+      }
+
+      if (description) {
+        eventData.description = description;
+      }
+
+      if (attendees) {
+        const attendeeList = Array.isArray(attendees) ? attendees : [attendees];
+        eventData.attendees = attendeeList.map(email => ({ email: email.trim() }));
+      }
+
+      // Create event
+      const createdEvent = await createEvent(
+        freshTokens.access_token,
+        calendarId,
+        eventData
+      );
+
+      // Format confirmation
+      const parts: string[] = [];
+      parts.push('Event created successfully!');
+      parts.push('');
+      parts.push(`Event ID: ${createdEvent.id}`);
+      parts.push(`Title: ${createdEvent.summary}`);
+      parts.push(`When: ${startDate.toLocaleString()} - ${endDate.toLocaleTimeString()}`);
+      parts.push(`Calendar: ${calendarId}`);
+
+      if (createdEvent.location) {
+        parts.push(`Location: ${createdEvent.location}`);
+      }
+
+      if (createdEvent.attendees && createdEvent.attendees.length > 0) {
+        const attendeeEmails = createdEvent.attendees.map(a => a.email).join(', ');
+        parts.push(`Attendees: ${attendeeEmails}`);
+      }
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] create_event called with params: ${JSON.stringify(params)}`,
+            text: parts.join('\n'),
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
