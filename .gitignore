@@ -1,0 +1,12 @@
+# Claude sessions (local working data)
+claude-sessions/
+
+# Temporary files
+.tmp/
+*.tmp
+
+# Cache
+.cache/
+
+# OS files
+.DS_Store
