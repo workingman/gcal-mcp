@@ -3,10 +3,9 @@
   "name": "calendar-mcp",
   "main": "src/index.ts",
   "compatibility_date": "2025-02-01",
-  "compatibility_flags": ["nodejs_compat"],
 
-  // Node.js compatibility for Web Crypto API and other Node.js features
-  "node_compat": true,
+  // Node.js compatibility enabled via compatibility flag
+  "compatibility_flags": ["nodejs_compat"],
 
   // KV namespaces for MCP OAuth and Google tokens storage
   "kv_namespaces": [
