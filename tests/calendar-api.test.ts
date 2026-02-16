@@ -474,7 +474,7 @@ describe('Google Calendar API Client', () => {
   });
 
   describe('createEvent', () => {
-    it('should create a new event', async () => {
+    it('should create a new event with required fields', async () => {
       const newEventData: Partial<CalendarEvent> = {
         summary: 'New Meeting',
         start: { dateTime: '2026-02-25T14:00:00-08:00' },
@@ -497,6 +497,102 @@ describe('Google Calendar API Client', () => {
 
       assert.strictEqual(event.id, 'new_event_id');
       assert.strictEqual(event.summary, 'New Meeting');
+    });
+
+    it('should create event with attendees properly formatted', async () => {
+      const newEventData: Partial<CalendarEvent> = {
+        summary: 'Team Sync',
+        start: { dateTime: '2026-02-25T14:00:00-08:00' },
+        end: { dateTime: '2026-02-25T15:00:00-08:00' },
+        attendees: [
+          { email: 'alice@example.com', displayName: 'Alice' },
+          { email: 'bob@example.com' },
+        ],
+      };
+
+      const createdEvent: CalendarEvent = {
+        id: 'event_with_attendees',
+        summary: 'Team Sync',
+        start: { dateTime: '2026-02-25T14:00:00-08:00' },
+        end: { dateTime: '2026-02-25T15:00:00-08:00' },
+        attendees: newEventData.attendees,
+        calendarId: 'primary',
+        status: 'confirmed',
+        htmlLink: 'https://calendar.google.com/event?eid=event_with_attendees',
+      };
+
+      mockFetch(createdEvent);
+
+      const event = await createEvent('test_token', 'primary', newEventData);
+
+      assert.strictEqual(event.attendees?.length, 2);
+      assert.strictEqual(event.attendees?.[0].email, 'alice@example.com');
+      assert.strictEqual(event.attendees?.[1].email, 'bob@example.com');
+    });
+
+    it('should create event with optional fields (location, description)', async () => {
+      const newEventData: Partial<CalendarEvent> = {
+        summary: 'Client Meeting',
+        description: 'Discuss Q1 roadmap',
+        location: 'Conference Room B',
+        start: { dateTime: '2026-02-25T14:00:00-08:00' },
+        end: { dateTime: '2026-02-25T15:00:00-08:00' },
+      };
+
+      const createdEvent: CalendarEvent = {
+        id: 'event_with_details',
+        summary: 'Client Meeting',
+        description: 'Discuss Q1 roadmap',
+        location: 'Conference Room B',
+        start: { dateTime: '2026-02-25T14:00:00-08:00' },
+        end: { dateTime: '2026-02-25T15:00:00-08:00' },
+        calendarId: 'primary',
+        status: 'confirmed',
+        htmlLink: 'https://calendar.google.com/event?eid=event_with_details',
+      };
+
+      mockFetch(createdEvent);
+
+      const event = await createEvent('test_token', 'primary', newEventData);
+
+      assert.strictEqual(event.description, 'Discuss Q1 roadmap');
+      assert.strictEqual(event.location, 'Conference Room B');
+    });
+
+    it('should handle 400 error for invalid event data', async () => {
+      mockFetch({ error: { message: 'Invalid event data' } }, 400);
+
+      await assert.rejects(
+        async () =>
+          createEvent('test_token', 'primary', {
+            summary: 'Invalid Event',
+            // Missing required start/end
+          } as Partial<CalendarEvent>),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiError');
+          assert.strictEqual((error as any).statusCode, 400);
+          return true;
+        },
+        'Should throw GoogleApiError on 400'
+      );
+    });
+
+    it('should handle 403 error with permission message', async () => {
+      mockFetch({ error: { message: 'Forbidden' } }, 403);
+
+      await assert.rejects(
+        async () =>
+          createEvent('test_token', 'readonly@example.com', {
+            summary: 'New Event',
+            start: { dateTime: '2026-02-25T14:00:00-08:00' },
+            end: { dateTime: '2026-02-25T15:00:00-08:00' },
+          }),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiPermissionError');
+          return true;
+        },
+        'Should throw GoogleApiPermissionError on 403'
+      );
     });
   });
 
