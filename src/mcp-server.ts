@@ -8,7 +8,7 @@ import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types.ts';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto.ts';
 import { computeKVKey, validateSession } from './session.ts';
 import { AuditLogger } from './audit.ts';
-import { listAllEvents } from './calendar-api.ts';
+import { listAllEvents, getEvent } from './calendar-api.ts';
 import { parseDateRange } from './date-utils.ts';
 import { toMcpErrorResponse } from './error-formatter.ts';
 
@@ -293,23 +293,95 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
+      // Parse parameters
+      const eventId = params.event_id as string;
+      const calendarId = (params.calendar_id as string) || 'primary';
+
+      if (!eventId) {
+        return toMcpErrorResponse('Missing required parameter: event_id');
+      }
+
+      // Fetch event
+      const event = await getEvent(
+        freshTokens.access_token,
+        eventId,
+        calendarId,
+        {
+          kv: this.env.GOOGLE_TOKENS_KV,
+          userIdHash: tokens.user_id,
+        }
+      );
+
+      // Format event details
+      const parts: string[] = [];
+
+      // Title
+      parts.push(`Event: ${event.summary}`);
+      parts.push('');
+
+      // Time
+      const start = event.start.dateTime || event.start.date || '';
+      const end = event.end.dateTime || event.end.date || '';
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+
+      if (event.start.date) {
+        // All-day event
+        parts.push(`When: All day, ${startDate.toLocaleDateString()}`);
+      } else {
+        // Timed event
+        parts.push(`When: ${startDate.toLocaleString()} - ${endDate.toLocaleTimeString()}`);
+      }
+
+      // Calendar
+      parts.push(`Calendar: ${event.calendarName || event.calendarId}`);
+
+      // Location
+      if (event.location) {
+        parts.push(`Location: ${event.location}`);
+      }
+
+      parts.push('');
+
+      // Attendees
+      if (event.attendees && event.attendees.length > 0) {
+        parts.push('Attendees:');
+        event.attendees.forEach(attendee => {
+          const name = attendee.displayName || attendee.email;
+          const status = attendee.responseStatus ? ` - ${attendee.responseStatus}` : '';
+          parts.push(`  • ${name}${status}`);
+        });
+        parts.push('');
+      }
+
+      // Description
+      if (event.description) {
+        parts.push('Description:');
+        parts.push(event.description);
+        parts.push('');
+      }
+
+      // Recurring event metadata
+      if (event.recurringEventId) {
+        parts.push(`Part of recurring series (ID: ${event.recurringEventId})`);
+        parts.push('');
+      }
+
+      // Link
+      if (event.htmlLink) {
+        parts.push(`Link: ${event.htmlLink}`);
+      }
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] get_event called with params: ${JSON.stringify(params)}`,
+            text: parts.join('\n'),
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
