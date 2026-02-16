@@ -257,7 +257,7 @@ describe('Google Calendar API Client', () => {
   });
 
   describe('getEvent', () => {
-    it('should retrieve a single event by ID', async () => {
+    it('should retrieve a single event by ID with calendar name', async () => {
       const mockEvent: CalendarEvent = {
         id: 'event123',
         summary: 'Single Event',
@@ -268,12 +268,208 @@ describe('Google Calendar API Client', () => {
         htmlLink: 'https://calendar.google.com/event?eid=event123',
       };
 
-      mockFetch(mockEvent);
+      const mockCalendars: Calendar[] = [
+        {
+          id: 'primary',
+          summary: 'My Calendar',
+          timeZone: 'America/Vancouver',
+          primary: true,
+          accessRole: 'owner',
+        },
+      ];
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: mockCalendars }),
+            text: async () => JSON.stringify({ items: mockCalendars }),
+          } as Response;
+        } else if (urlStr.includes('/events/event123')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => mockEvent,
+            text: async () => JSON.stringify(mockEvent),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
 
       const event = await getEvent('test_token', 'event123');
 
       assert.strictEqual(event.id, 'event123');
       assert.strictEqual(event.summary, 'Single Event');
+      assert.strictEqual(event.calendarName, 'My Calendar');
+      assert.strictEqual(event.calendarId, 'primary');
+    });
+
+    it('should throw GoogleApiNotFoundError on 404', async () => {
+      mockFetch({ error: { message: 'Not found' } }, 404);
+
+      await assert.rejects(
+        async () => getEvent('test_token', 'nonexistent'),
+        (error: Error) => {
+          assert.strictEqual(error.name, 'GoogleApiNotFoundError');
+          return true;
+        },
+        'Should throw GoogleApiNotFoundError on 404'
+      );
+    });
+
+    it('should return cancelled event with status="cancelled"', async () => {
+      const mockCancelledEvent: CalendarEvent = {
+        id: 'event456',
+        summary: 'Cancelled Meeting',
+        start: { dateTime: '2026-02-20T10:00:00-08:00' },
+        end: { dateTime: '2026-02-20T11:00:00-08:00' },
+        calendarId: 'primary',
+        status: 'cancelled',
+        htmlLink: 'https://calendar.google.com/event?eid=event456',
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: [] }),
+            text: async () => JSON.stringify({ items: [] }),
+          } as Response;
+        } else if (urlStr.includes('/events/event456')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => mockCancelledEvent,
+            text: async () => JSON.stringify(mockCancelledEvent),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const event = await getEvent('test_token', 'event456');
+
+      assert.strictEqual(event.id, 'event456');
+      assert.strictEqual(event.status, 'cancelled');
+    });
+
+    it('should return recurring event with recurringEventId', async () => {
+      const mockRecurringEvent: CalendarEvent = {
+        id: 'event789_20260220',
+        summary: 'Weekly Standup',
+        start: { dateTime: '2026-02-20T09:00:00-08:00' },
+        end: { dateTime: '2026-02-20T09:30:00-08:00' },
+        calendarId: 'primary',
+        status: 'confirmed',
+        htmlLink: 'https://calendar.google.com/event?eid=event789',
+        recurringEventId: 'event789',
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: [] }),
+            text: async () => JSON.stringify({ items: [] }),
+          } as Response;
+        } else if (urlStr.includes('/events/event789_20260220')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => mockRecurringEvent,
+            text: async () => JSON.stringify(mockRecurringEvent),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const event = await getEvent('test_token', 'event789_20260220');
+
+      assert.strictEqual(event.id, 'event789_20260220');
+      assert.strictEqual(event.recurringEventId, 'event789');
+      assert.strictEqual(event.summary, 'Weekly Standup');
+    });
+
+    it('should include all event details (attendees, location, description)', async () => {
+      const mockDetailedEvent: CalendarEvent = {
+        id: 'event999',
+        summary: 'Team Meeting',
+        description: 'Quarterly planning session',
+        location: 'Conference Room A',
+        start: { dateTime: '2026-02-20T14:00:00-08:00', timeZone: 'America/Vancouver' },
+        end: { dateTime: '2026-02-20T15:00:00-08:00', timeZone: 'America/Vancouver' },
+        attendees: [
+          { email: 'alice@example.com', displayName: 'Alice', responseStatus: 'accepted' },
+          { email: 'bob@example.com', displayName: 'Bob', responseStatus: 'tentative' },
+        ],
+        organizer: { email: 'manager@example.com', displayName: 'Manager', self: true },
+        calendarId: 'primary',
+        status: 'confirmed',
+        htmlLink: 'https://calendar.google.com/event?eid=event999',
+      };
+
+      globalThis.fetch = (async (url: string | URL | Request): Promise<Response> => {
+        const urlStr = url.toString();
+
+        if (urlStr.includes('/calendarList')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ items: [] }),
+            text: async () => JSON.stringify({ items: [] }),
+          } as Response;
+        } else if (urlStr.includes('/events/event999')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => mockDetailedEvent,
+            text: async () => JSON.stringify(mockDetailedEvent),
+          } as Response;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+        } as Response;
+      }) as typeof fetch;
+
+      const event = await getEvent('test_token', 'event999');
+
+      assert.strictEqual(event.id, 'event999');
+      assert.strictEqual(event.description, 'Quarterly planning session');
+      assert.strictEqual(event.location, 'Conference Room A');
+      assert.strictEqual(event.attendees?.length, 2);
+      assert.strictEqual(event.attendees?.[0].email, 'alice@example.com');
+      assert.strictEqual(event.attendees?.[0].responseStatus, 'accepted');
+      assert.strictEqual(event.organizer?.email, 'manager@example.com');
     });
   });
 

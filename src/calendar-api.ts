@@ -300,19 +300,45 @@ export async function listEvents(
 }
 
 /**
- * Get a single event by ID
+ * Get a single event by ID with enriched calendar metadata
+ * Enriches event with calendarName from cached calendar list
+ *
+ * @param accessToken Google OAuth access token
+ * @param eventId Event ID to retrieve
+ * @param calendarId Calendar ID (defaults to "primary")
+ * @param options Optional KV configuration for calendar list caching
+ * @returns CalendarEvent with complete details including calendarName
  */
 export async function getEvent(
   accessToken: string,
   eventId: string,
-  calendarId: string = 'primary'
+  calendarId: string = 'primary',
+  options?: {
+    kv?: KVNamespace;
+    userIdHash?: string;
+  }
 ): Promise<CalendarEvent> {
   const url = `${GOOGLE_CALENDAR_API_BASE}/calendars/${encodeURIComponent(
     calendarId
   )}/events/${encodeURIComponent(eventId)}`;
 
   const response = await apiFetch(accessToken, url);
-  return response.json();
+  const event = (await response.json()) as CalendarEvent;
+
+  // Enrich with calendar name from cached list
+  try {
+    const calendars = await listCalendars(accessToken, options);
+    const calendar = calendars.find(c => c.id === calendarId);
+    event.calendarName = calendar?.summary || calendarId;
+  } catch (error) {
+    // If calendar list fetch fails, use calendarId as fallback
+    event.calendarName = calendarId;
+  }
+
+  // Ensure calendarId is set on event
+  event.calendarId = calendarId;
+
+  return event;
 }
 
 /**
