@@ -3,11 +3,14 @@
 // NOTE: McpAgent integration will be completed in integration testing
 // For now, using basic Durable Object pattern with placeholder tool registration
 
-import type { Env } from './env.d';
-import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types';
-import { TokenManager, importEncryptionKey, importHmacKey } from './crypto';
-import { computeKVKey, validateSession } from './session';
+import type { Env } from './env.d.ts';
+import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types.ts';
+import { TokenManager, importEncryptionKey, importHmacKey } from './crypto.ts';
+import { computeKVKey, validateSession } from './session.ts';
 import { AuditLogger } from './audit.ts';
+import { listAllEvents } from './calendar-api.ts';
+import { parseDateRange } from './date-utils.ts';
+import { toMcpErrorResponse } from './error-formatter.ts';
 
 /**
  * CalendarMCP Durable Object
@@ -203,24 +206,85 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
-      // Placeholder response
+      // Parse parameters
+      const dateRangeInput = (params.date_range as string) || 'next 7 days';
+      const calendarId = params.calendar_id as string | undefined;
+      const keyword = params.keyword as string | undefined;
+      const attendee = params.attendee as string | undefined;
+
+      // Parse date range
+      const { timeMin, timeMax } = parseDateRange(dateRangeInput);
+
+      // Fetch events
+      const events = await listAllEvents(
+        freshTokens.access_token,
+        {
+          timeMin,
+          timeMax,
+          q: keyword,
+          attendee,
+        },
+        {
+          kv: this.env.GOOGLE_TOKENS_KV,
+          userIdHash: tokens.user_id,
+        }
+      );
+
+      // Filter by calendar if specified
+      const filteredEvents = calendarId
+        ? events.filter(e => e.calendarId === calendarId)
+        : events;
+
+      // Format response
+      if (filteredEvents.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'No events found for the specified criteria.',
+            },
+          ],
+        };
+      }
+
+      const formattedEvents = filteredEvents.map(event => {
+        const start = event.start.dateTime || event.start.date || '';
+        const end = event.end.dateTime || event.end.date || '';
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        // Format time range
+        let timeStr: string;
+        if (event.start.date) {
+          // All-day event
+          timeStr = `All day, ${startDate.toLocaleDateString()}`;
+        } else {
+          timeStr = `${startDate.toLocaleString()} - ${endDate.toLocaleTimeString()}`;
+        }
+
+        const parts = [
+          `• ${event.summary}`,
+          `  ${timeStr}`,
+          `  Calendar: ${event.calendarName || event.calendarId}`,
+        ];
+
+        if (event.location) {
+          parts.push(`  Location: ${event.location}`);
+        }
+
+        return parts.join('\n');
+      }).join('\n\n');
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] list_events called with params: ${JSON.stringify(params)}. Token valid until ${new Date(freshTokens.expires_at).toISOString()}`,
+            text: `Found ${filteredEvents.length} event${filteredEvents.length === 1 ? '' : 's'}:\n\n${formattedEvents}`,
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
