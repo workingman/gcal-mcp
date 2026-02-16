@@ -136,16 +136,31 @@ app.get('/', (c) => c.text('Calendar MCP Server - Ready'));
 
 /**
  * GET /google/auth?user={email} - Initiate Google OAuth flow
- * Redirects to Google consent screen with user email in state
+ * Redirects to Google consent screen with user email and CSRF token in state
  */
-app.get('/google/auth', (c) => {
+app.get('/google/auth', async (c) => {
   const userEmail = c.req.query('user');
 
   if (!userEmail) {
     return c.html(errorPage('Missing user email parameter'), 400);
   }
 
-  const state = JSON.stringify({ userEmail });
+  // Generate CSRF token (random 32-byte hex string)
+  const csrfTokenBytes = crypto.getRandomValues(new Uint8Array(32));
+  const csrfToken = Array.from(csrfTokenBytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Store CSRF token in KV with 10-minute expiry
+  const csrfKey = `csrf:${csrfToken}`;
+  await c.env.OAUTH_KV.put(
+    csrfKey,
+    JSON.stringify({ userEmail, timestamp: Date.now() }),
+    { expirationTtl: 600 } // 10 minutes
+  );
+
+  // Include CSRF token and user email in state parameter
+  const state = JSON.stringify({ userEmail, csrfToken });
   const redirectUri = `${c.env.WORKER_URL}/google/callback`;
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -163,6 +178,7 @@ app.get('/google/auth', (c) => {
 /**
  * GET /google/callback - Google OAuth callback
  * Exchanges authorization code for tokens, encrypts and stores in KV
+ * Validates CSRF token from state parameter
  */
 app.get('/google/callback', async (c) => {
   const code = c.req.query('code');
@@ -181,12 +197,51 @@ app.get('/google/callback', async (c) => {
   }
 
   let userEmail: string;
+  let csrfToken: string;
   try {
     const stateData = JSON.parse(state);
     userEmail = stateData.userEmail;
+    csrfToken = stateData.csrfToken;
+
+    if (!userEmail || !csrfToken) {
+      throw new Error('Missing userEmail or csrfToken in state');
+    }
   } catch {
     return c.html(errorPage('Invalid state parameter'), 400);
   }
+
+  // Validate CSRF token
+  const csrfKey = `csrf:${csrfToken}`;
+  const csrfData = await c.env.OAUTH_KV.get(csrfKey);
+
+  if (!csrfData) {
+    return c.html(
+      errorPage('Invalid or expired CSRF token. Please restart the authorization flow.'),
+      400
+    );
+  }
+
+  // Parse and validate CSRF data
+  let storedCsrfData: { userEmail: string; timestamp: number };
+  try {
+    storedCsrfData = JSON.parse(csrfData);
+  } catch {
+    return c.html(errorPage('Malformed CSRF data'), 400);
+  }
+
+  // Verify user email matches
+  if (storedCsrfData.userEmail !== userEmail) {
+    return c.html(errorPage('CSRF validation failed: user mismatch'), 403);
+  }
+
+  // Verify timestamp is recent (within 10 minutes)
+  const age = Date.now() - storedCsrfData.timestamp;
+  if (age > 10 * 60 * 1000) {
+    return c.html(errorPage('CSRF token expired. Please restart authorization.'), 400);
+  }
+
+  // Delete CSRF token (one-time use)
+  await c.env.OAUTH_KV.delete(csrfKey);
 
   // Exchange authorization code for tokens
   const redirectUri = `${c.env.WORKER_URL}/google/callback`;
