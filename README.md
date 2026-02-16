@@ -191,6 +191,7 @@ GCP OAuth client must be deleted manually from Google Cloud Console.
 
 ## Documentation
 
+- [OAuth Setup Guide](docs/oauth-setup.md) - Complete guide for Google OAuth configuration
 - [Product Requirements Document](docs/prd-calendar-mcp.md)
 - [Technical Design Document](docs/tdd-calendar-mcp.md)
 - [Architecture Diagram](docs/arch-calendar-mcp.mmd)
