@@ -85,6 +85,174 @@ Wave 2 (deps: 103):  #104
 Wave 3 (deps: 104):  #105, #106 (can run in parallel - different files)
 ```
 
+## Orchestrator Context Management (CRITICAL)
+
+### Why Orchestrator Monitoring is Required
+
+**Key Learning:** Agents CANNOT reliably self-monitor their own context usage. They lack visibility into token counts and may claim to be "at 80%" when they're actually at 95% or have already exceeded limits.
+
+**Problem if not managed:**
+- Agents hit the 200k hard limit with no graceful shutdown
+- No opportunity to commit progress or update issues
+- Work lost, must manually reconstruct state
+- GitHub issues left in inconsistent states
+
+**Solution:** The orchestrator (you) must actively monitor spawned agents and proactively intervene.
+
+### Monitoring Strategy
+
+**For each spawned agent, track context usage externally:**
+
+1. **Use TaskOutput with block=false to check progress:**
+   ```bash
+   # Non-blocking check of agent status
+   TaskOutput(task_id="<agent-id>", block=false, timeout=1000)
+   ```
+
+2. **Watch for token usage in output:**
+   - Output may include token counts or context warnings
+   - If not visible, estimate based on agent activity duration
+
+3. **Use git log to verify progress:**
+   ```bash
+   # Check commits from the last N minutes
+   git log --oneline --since="15 minutes ago"
+   ```
+
+### Intervention Thresholds
+
+**Monitor and intervene at these levels:**
+
+| Token Usage | Orchestrator Action |
+|------------|---------------------|
+| 0-120k (0-60%) | Continue monitoring, no action needed |
+| 120k-140k (60-70%) | Increase monitoring frequency, prepare for intervention |
+| 140k-160k (70-80%) | **INTERVENE** - Stop agent proactively (see procedure below) |
+| 160k-180k (80-90%) | **CRITICAL** - Stop immediately if not already stopped |
+| 180k+ (90%+) | **EMERGENCY** - Stop now, risk of incomplete state |
+
+**Why 70-80% threshold:** Provides safety margin for agent to commit work, update checkboxes, and shut down gracefully (~20-40k tokens).
+
+### Intervention Procedure
+
+When agent reaches 140k-160k tokens (70-80%):
+
+**Step 1: Stop the agent gracefully**
+```bash
+TaskStop(task_id="<agent-id>")
+```
+
+**Step 2: Read git log to determine checkpoint progress**
+```bash
+git log --oneline --since="30 minutes ago" --grep="#<parent-number>"
+```
+
+Identify which sub-issues have been completed (committed) and which are in progress.
+
+**Step 3: Update GitHub issues with progress**
+
+For completed sub-issues:
+```bash
+# Mark checkboxes and close
+BODY=$(gh issue view <issue-number> --json body -q .body)
+BODY=$(echo "$BODY" | sed 's/- \[ \] /- [x] /g')
+gh issue edit <issue-number> --body "$BODY"
+gh issue close <issue-number> -c "Completed by agent <agent-id>. All acceptance criteria met."
+```
+
+For in-progress sub-issues:
+```bash
+# Mark completed checkpoints only
+BODY=$(gh issue view <issue-number> --json body -q .body)
+# Update specific checkpoints based on git log/output analysis
+BODY=$(echo "$BODY" | sed 's/- \[ \] Checkpoint 1:/- [x] Checkpoint 1:/')
+gh issue edit <issue-number> --body "$BODY"
+
+# Add comment with resumption context
+gh issue comment <issue-number> -b "Agent <agent-id> context depleted at 80%. Checkpoint 1 complete (commit <SHA>). Resume from Checkpoint 2."
+```
+
+**Step 4: Spawn fresh agent with updated "Current State"**
+
+Update the execution prompt's "CURRENT STATE" section with:
+- What has been completed (closed issues)
+- What is in progress (partial issue, which checkpoint)
+- Recent commits and file changes
+- Updated "Existing files in your domain" list
+
+Then spawn new agent with same parent but updated context.
+
+### Agent Prompt Updates
+
+**Remove self-monitoring language from agent prompts.** Agents should focus on work, not context tracking.
+
+**Old (unreliable):**
+> "If context grows large (>80% full) before completing the sub-issue, commit and STOP."
+
+**New (orchestrator-driven):**
+> "Work through sub-issues in order. Commit after each completion. The orchestrator monitors your context usage and will stop you if needed - if stopped, your progress will be checkpointed and a fresh agent will resume."
+
+**In CHECKPOINT PROTOCOL section, replace self-monitoring with:**
+> "The orchestrator actively monitors your context usage. If you are stopped mid-issue due to context limits, your commits serve as checkpoints. The orchestrator will update issue progress and spawn a fresh agent to continue from your last commit."
+
+### Monitoring During Execution
+
+**Recommended monitoring loop (for orchestrator):**
+
+```bash
+# Check agent progress every 5-10 minutes
+while agent_running; do
+  # Check token usage (via TaskOutput or output file)
+  tokens=$(get_token_usage "$agent_id")
+
+  # Check git commits
+  commits=$(git log --oneline --since="5 minutes ago" --grep="#$parent_number" | wc -l)
+
+  echo "Agent $agent_id: $tokens tokens, $commits recent commits"
+
+  # Intervene if approaching threshold
+  if [ "$tokens" -gt 140000 ]; then
+    echo "INTERVENTION: Agent $agent_id at 70%+ context, stopping..."
+    intervention_procedure "$agent_id" "$parent_number"
+    break
+  fi
+
+  sleep 300  # Check every 5 minutes
+done
+```
+
+### Context Budget Planning
+
+**Rough token estimates per issue (from experience):**
+- Simple issue (basic function, 3-5 tests): ~10-15k tokens
+- Medium issue (API endpoint, 8-12 tests): ~20-30k tokens
+- Complex issue (multi-file refactor, integration tests): ~40-60k tokens
+
+**For a 200k context window:**
+- Plan for ~120-140k tokens of productive work (60-70%)
+- Reserve 40-60k tokens for orchestrator overhead, error recovery, checkpointing
+
+**If parent has >5 medium issues or >3 complex issues:**
+- Expect context to deplete before completion
+- Plan for 2-3 agent spawns per parent
+- OR split parent into smaller execution batches
+
+### Key Principles
+
+1. **Agents cannot self-monitor** - Context usage is invisible to them
+2. **Orchestrator owns monitoring** - External visibility is reliable
+3. **Proactive intervention** - Stop at 70-80%, not 90-95%
+4. **Git commits are source of truth** - Not GitHub issue state
+5. **Clean handoffs** - Always update issues before respawning
+6. **Safety margin matters** - 20-40k token buffer for graceful shutdown
+
+### See Also
+
+- SESSION_NOTES.md § "Key Learnings & Process Improvements" - Real-world validation of this approach
+- Lines 228-249 below (Checkpoint Protocol) - What agents see (simplified, no self-monitoring)
+
+---
+
 ## Agent Execution Prompt Template
 
 ```markdown
@@ -119,8 +287,8 @@ Your mission: Execute <N> sub-issues for Parent #<PARENT_NUMBER> (<PARENT_TITLE>
 6. **Read standards first:** `<STANDARDS_PATH>` - Key limits: <KEY_LIMITS_SUMMARY>
 
 7. **Follow checkpoints.** Each issue has 2-5 checkpoints. Work through them in order.
-   If context grows large (>80% full), commit at checkpoint and STOP. Report status
-   for fresh session continuation.
+   Commit after completing each sub-issue. The orchestrator monitors your context usage
+   and will stop you if needed - focus on completing work, not tracking context.
 
 8. **Update issue checkboxes only when closing.** Do one bulk update (mark all
    checkboxes complete) right before closing. Exception: if stopping mid-issue due
@@ -238,15 +406,23 @@ Each sub-issue has 2-5 checkpoints. Work through them in order.
    c. Mark all checkboxes complete
    d. Close the issue with `gh issue close <number>`
 
-**If context grows large (>80% full) before completing the sub-issue:**
-1. Complete the current checkpoint
-2. Run tests for what you've built so far
-3. Commit with message: `<summary> (#<issue>) - checkpoint X of Y`
-4. STOP and report: "Context limit approaching. Committed checkpoint X of Y.
-   Ready for fresh session to continue from checkpoint Y."
+**Orchestrator Context Management:**
 
-**The orchestrator will spawn a fresh agent with the same prompt but updated
-"Current State" section reflecting your progress.**
+The orchestrator actively monitors your context usage and will stop you if you approach token limits (70-80% of 200k tokens). You do NOT need to self-monitor context.
+
+**If stopped mid-issue by orchestrator:**
+- Your commits serve as automatic checkpoints
+- The orchestrator will read git log to determine progress
+- The orchestrator will update issue checkboxes for completed checkpoints
+- A fresh agent will be spawned to resume from your last commit
+
+**Your responsibility:** Focus on completing work and committing after each sub-issue (or checkpoint if logical). The orchestrator handles context management.
+
+**Exception - If you detect problems independently:**
+If you encounter blocking issues (missing dependencies, unexpected test failures, etc.):
+1. Commit progress so far with descriptive message
+2. STOP and report the blocker clearly
+3. The orchestrator will file issues or spawn specialized agents to unblock
 
 ## ISSUE PROGRESS TRACKING
 
