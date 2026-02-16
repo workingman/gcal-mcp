@@ -207,7 +207,18 @@ async function apiFetch(
 /**
  * List events from a calendar with pagination support
  * Always uses singleEvents=true to expand recurring events
- * Auto-paginates up to 1000 events
+ * Auto-paginates up to 1000 events with warning if more available
+ * Supports attendee filtering (client-side)
+ *
+ * @param accessToken Google OAuth access token
+ * @param params Filtering and pagination parameters
+ * @param params.calendarId Calendar ID (defaults to "primary")
+ * @param params.timeMin Start of time range (ISO 8601)
+ * @param params.timeMax End of time range (ISO 8601)
+ * @param params.q Keyword search query
+ * @param params.attendee Filter by attendee email or display name
+ * @param params.maxResults Results per page (default 250, max 2500)
+ * @returns Array of CalendarEvent objects
  */
 export async function listEvents(
   accessToken: string,
@@ -216,6 +227,7 @@ export async function listEvents(
     timeMin?: string;
     timeMax?: string;
     q?: string;
+    attendee?: string;
     maxResults?: number;
   }
 ): Promise<CalendarEvent[]> {
@@ -260,6 +272,28 @@ export async function listEvents(
 
     events = events.concat(pageData.items || []);
     pageToken = pageData.nextPageToken;
+  }
+
+  // Warn if more events are available beyond 1000 limit
+  if (pageToken) {
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      message: 'More events available beyond 1000 event limit',
+      eventsReturned: events.length,
+      calendarId,
+    }));
+  }
+
+  // Client-side attendee filtering
+  if (params.attendee) {
+    const attendeeQuery = params.attendee.toLowerCase();
+    events = events.filter(event =>
+      event.attendees?.some(
+        a =>
+          a.email.toLowerCase().includes(attendeeQuery) ||
+          a.displayName?.toLowerCase().includes(attendeeQuery)
+      )
+    );
   }
 
   return events;

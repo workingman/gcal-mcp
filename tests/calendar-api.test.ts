@@ -116,6 +116,143 @@ describe('Google Calendar API Client', () => {
       assert.strictEqual(events[0].id, 'event1');
       assert.strictEqual(events[1].id, 'event2');
     });
+
+    it('should filter events by keyword using q parameter', async () => {
+      const mockEvents: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Team Meeting',
+          start: { dateTime: '2026-02-20T10:00:00-08:00' },
+          end: { dateTime: '2026-02-20T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+        },
+      ];
+
+      mockFetch({ items: mockEvents });
+
+      const events = await listEvents('test_token', {
+        calendarId: 'primary',
+        q: 'meeting',
+      });
+
+      assert.strictEqual(events.length, 1);
+      assert.strictEqual(events[0].summary, 'Team Meeting');
+    });
+
+    it('should filter events by attendee email', async () => {
+      const mockEvents: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Meeting with John',
+          start: { dateTime: '2026-02-20T10:00:00-08:00' },
+          end: { dateTime: '2026-02-20T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+          attendees: [
+            { email: 'john@example.com', displayName: 'John Doe' },
+            { email: 'alice@example.com', displayName: 'Alice Smith' },
+          ],
+        },
+        {
+          id: 'event2',
+          summary: 'Meeting with Bob',
+          start: { dateTime: '2026-02-21T10:00:00-08:00' },
+          end: { dateTime: '2026-02-21T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event2',
+          attendees: [
+            { email: 'bob@example.com', displayName: 'Bob Johnson' },
+          ],
+        },
+      ];
+
+      mockFetch({ items: mockEvents });
+
+      const events = await listEvents('test_token', {
+        calendarId: 'primary',
+        attendee: 'john@example.com',
+      });
+
+      assert.strictEqual(events.length, 1);
+      assert.strictEqual(events[0].id, 'event1');
+      assert.strictEqual(events[0].summary, 'Meeting with John');
+    });
+
+    it('should filter events by attendee display name', async () => {
+      const mockEvents: CalendarEvent[] = [
+        {
+          id: 'event1',
+          summary: 'Meeting with Alice',
+          start: { dateTime: '2026-02-20T10:00:00-08:00' },
+          end: { dateTime: '2026-02-20T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event1',
+          attendees: [
+            { email: 'alice@example.com', displayName: 'Alice Smith' },
+          ],
+        },
+        {
+          id: 'event2',
+          summary: 'Solo meeting',
+          start: { dateTime: '2026-02-21T10:00:00-08:00' },
+          end: { dateTime: '2026-02-21T11:00:00-08:00' },
+          calendarId: 'primary',
+          status: 'confirmed',
+          htmlLink: 'https://calendar.google.com/event?eid=event2',
+        },
+      ];
+
+      mockFetch({ items: mockEvents });
+
+      const events = await listEvents('test_token', {
+        calendarId: 'primary',
+        attendee: 'Alice',
+      });
+
+      assert.strictEqual(events.length, 1);
+      assert.strictEqual(events[0].id, 'event1');
+    });
+
+    it('should warn when exceeding 1000 event limit', async () => {
+      const mockEvents: CalendarEvent[] = Array.from({ length: 500 }, (_, i) => ({
+        id: `event${i}`,
+        summary: `Event ${i}`,
+        start: { dateTime: '2026-02-20T10:00:00-08:00' },
+        end: { dateTime: '2026-02-20T11:00:00-08:00' },
+        calendarId: 'primary',
+        status: 'confirmed' as const,
+        htmlLink: `https://calendar.google.com/event?eid=event${i}`,
+      }));
+
+      let warnCalled = false;
+      const originalWarn = console.warn;
+      console.warn = (message: string) => {
+        if (message.includes('More events available')) {
+          warnCalled = true;
+        }
+      };
+
+      mockFetch(
+        { items: mockEvents, nextPageToken: 'token1' },
+        200,
+        [
+          { response: { items: mockEvents, nextPageToken: 'token2' }, status: 200 },
+          { response: { items: mockEvents, nextPageToken: 'token3' }, status: 200 },
+        ]
+      );
+
+      const events = await listEvents('test_token', { calendarId: 'primary' });
+
+      console.warn = originalWarn;
+
+      assert.strictEqual(events.length, 1000, 'Should return max 1000 events');
+      assert.strictEqual(warnCalled, true, 'Should warn about additional events');
+    });
   });
 
   describe('getEvent', () => {
