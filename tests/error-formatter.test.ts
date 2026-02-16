@@ -10,6 +10,7 @@ import {
   formatGoogleApiAuthError,
   formatGenericError,
   isSafeErrorMessage,
+  toMcpErrorResponse,
 } from '../src/error-formatter.ts';
 
 describe('Error Formatting Utilities', () => {
@@ -278,5 +279,51 @@ describe('Error Formatting Utilities', () => {
       sanitized.includes('Bearer [REDACTED]'),
       'Should have Bearer placeholder'
     );
+  });
+
+  describe('MCP response format', () => {
+    it('should convert error message to MCP tool response format', () => {
+      const message = 'Google account not connected. Please authorize.';
+      const mcpResponse = toMcpErrorResponse(message);
+
+      assert.ok(mcpResponse.content, 'Should have content array');
+      assert.strictEqual(mcpResponse.content.length, 1, 'Should have one content item');
+      assert.strictEqual(mcpResponse.content[0].type, 'text', 'Type should be text');
+      assert.strictEqual(mcpResponse.content[0].text, message, 'Text should match input');
+    });
+
+    it('should handle multi-line error messages', () => {
+      const message = 'Error occurred.\nPlease try again.';
+      const mcpResponse = toMcpErrorResponse(message);
+
+      assert.strictEqual(mcpResponse.content[0].text, message);
+      assert.ok(mcpResponse.content[0].text.includes('\n'), 'Should preserve newlines');
+    });
+
+    it('should work with all error formatter outputs', () => {
+      const formatters = [
+        formatNoTokenError('test@example.com', 'https://worker.example.com'),
+        formatTokenExpiredError('test@example.com', 'https://worker.example.com'),
+        formatSessionValidationError(),
+        formatGoogleApiPermissionError('events'),
+        formatGoogleApiQuotaError(),
+        formatGoogleApiAuthError('test@example.com', 'https://worker.example.com'),
+      ];
+
+      for (const errorMsg of formatters) {
+        const mcpResponse = toMcpErrorResponse(errorMsg);
+        assert.strictEqual(mcpResponse.content[0].type, 'text');
+        assert.ok(mcpResponse.content[0].text.length > 0);
+      }
+    });
+
+    it('should return correct TypeScript types', () => {
+      const response = toMcpErrorResponse('test');
+
+      // Verify structure matches expected type
+      assert.ok(Array.isArray(response.content));
+      assert.ok(typeof response.content[0].type === 'string');
+      assert.ok(typeof response.content[0].text === 'string');
+    });
   });
 });

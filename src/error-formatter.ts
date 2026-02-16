@@ -91,3 +91,20 @@ export function isSafeErrorMessage(message: string): boolean {
 
   return true; // Message appears safe
 }
+
+/**
+ * Convert error message to MCP tool response format
+ * Returns standard MCP response structure: { content: [{ type: "text", text: string }] }
+ */
+export function toMcpErrorResponse(message: string): {
+  content: Array<{ type: string; text: string }>;
+} {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: message,
+      },
+    ],
+  };
+}
