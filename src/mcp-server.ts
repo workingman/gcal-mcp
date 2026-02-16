@@ -390,23 +390,81 @@ export class CalendarMCP {
       const tokens = await this.getTokenForUser();
       const freshTokens = await this.ensureFreshToken(tokens);
 
+      // Parse parameters
+      const query = params.query as string;
+      const includePast = (params.include_past as boolean) || false;
+
+      if (!query) {
+        return toMcpErrorResponse('Missing required parameter: query');
+      }
+
+      // Calculate time range
+      const now = new Date();
+      let timeMin: string;
+      if (includePast) {
+        // Include past 90 days
+        const ninetyDaysAgo = new Date(now);
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+        timeMin = ninetyDaysAgo.toISOString();
+      } else {
+        // Future only
+        timeMin = now.toISOString();
+      }
+
+      // Search events across all calendars
+      const events = await listAllEvents(
+        freshTokens.access_token,
+        {
+          timeMin,
+          q: query,
+        },
+        {
+          kv: this.env.GOOGLE_TOKENS_KV,
+          userIdHash: tokens.user_id,
+        }
+      );
+
+      // Format response
+      if (events.length === 0) {
+        const pastHint = includePast ? '' : ' Try setting include_past=true to search historical events.';
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `No events found matching '${query}'.${pastHint}`,
+            },
+          ],
+        };
+      }
+
+      const formattedEvents = events.map((event, index) => {
+        const start = event.start.dateTime || event.start.date || '';
+        const end = event.end.dateTime || event.end.date || '';
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+
+        // Format time range
+        let timeStr: string;
+        if (event.start.date) {
+          // All-day event
+          timeStr = `All day, ${startDate.toLocaleDateString()}`;
+        } else {
+          timeStr = `${startDate.toLocaleString()} - ${endDate.toLocaleTimeString()}`;
+        }
+
+        return `${index + 1}. ${event.summary} (${timeStr}) - ${event.calendarName || event.calendarId}`;
+      }).join('\n');
+
       return {
         content: [
           {
             type: 'text',
-            text: `[Placeholder] search_events called with params: ${JSON.stringify(params)}`,
+            text: `Found ${events.length} event${events.length === 1 ? '' : 's'} matching '${query}':\n\n${formattedEvents}`,
           },
         ],
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      };
+      return toMcpErrorResponse(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
