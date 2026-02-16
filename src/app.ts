@@ -6,6 +6,7 @@ import type { Env } from './env.d';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto';
 import { computeKVKey } from './session';
 import { authorizationPage, successPage, errorPage } from './utils';
+import { AuditLogger } from './audit.ts';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -239,6 +240,10 @@ app.get('/google/callback', async (c) => {
   // Compute KV key and store encrypted token
   const kvKey = await computeKVKey(userEmail, hmacKey);
   await c.env.GOOGLE_TOKENS_KV.put(kvKey, JSON.stringify(encryptedToken));
+
+  // Log authentication success
+  const auditLogger = new AuditLogger('calendar-mcp');
+  auditLogger.logAuthSuccess(userEmail, 'google');
 
   console.log(`[Google OAuth] Tokens stored for user: ${userEmail}`);
 

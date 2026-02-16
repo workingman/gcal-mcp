@@ -7,6 +7,7 @@ import type { Env } from './env.d';
 import type { McpSessionProps, GoogleTokens, EncryptedToken } from './types';
 import { TokenManager, importEncryptionKey, importHmacKey } from './crypto';
 import { computeKVKey, validateSession } from './session';
+import { AuditLogger } from './audit.ts';
 
 /**
  * CalendarMCP Durable Object
@@ -17,11 +18,13 @@ export class CalendarMCP {
   private state: DurableObjectState;
   private env: Env;
   private props: McpSessionProps;
+  private auditLogger: AuditLogger;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.props = { userEmail: '' }; // Will be populated from session
+    this.auditLogger = new AuditLogger('calendar-mcp');
   }
 
   /**
@@ -80,8 +83,13 @@ export class CalendarMCP {
 
     const encryptedToken: EncryptedToken = JSON.parse(encryptedJson);
 
-    // Validate session
-    const isValid = await validateSession(userEmail, encryptedToken, hmacKey);
+    // Validate session (Layer 2: post-fetch validation)
+    const isValid = await validateSession(
+      userEmail,
+      encryptedToken,
+      hmacKey,
+      this.auditLogger
+    );
     if (!isValid) {
       throw new Error('Session validation failed. Please re-authorize.');
     }
@@ -90,13 +98,21 @@ export class CalendarMCP {
     const manager = new TokenManager(encryptionKey, hmacKey);
     const tokens = await manager.decrypt(encryptedToken);
 
-    // Triple validation: verify user_id matches
+    // Triple validation: verify user_id matches (Layer 3: post-decrypt validation)
     if (tokens.user_id !== userEmail) {
-      console.error(
-        `Token ownership mismatch: expected=${userEmail}, actual=${tokens.user_id}`
+      this.auditLogger.logSecurityViolation(
+        userEmail,
+        'Token ownership mismatch',
+        {
+          expected_user: userEmail,
+          token_user: tokens.user_id,
+        }
       );
       throw new Error('Token ownership validation failed.');
     }
+
+    // Log token access
+    this.auditLogger.logTokenAccess(userEmail, 'token_retrieval');
 
     return tokens;
   }
@@ -129,6 +145,7 @@ export class CalendarMCP {
       );
 
       if (!refreshResponse.ok) {
+        this.auditLogger.logTokenRefresh(tokens.user_id, false);
         const authUrl = `${this.env.WORKER_URL}/google/auth?user=${encodeURIComponent(
           tokens.user_id
         )}`;
@@ -163,6 +180,8 @@ export class CalendarMCP {
       const kvKey = await computeKVKey(tokens.user_id, hmacKey);
       await this.env.GOOGLE_TOKENS_KV.put(kvKey, JSON.stringify(encrypted));
 
+      // Log successful token refresh
+      this.auditLogger.logTokenRefresh(tokens.user_id, true);
       console.log(`[Token Refresh] Refreshed token for user: ${tokens.user_id}`);
 
       return refreshedTokens;
