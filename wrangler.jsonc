@@ -8,8 +8,17 @@
   // Node.js compatibility for Web Crypto API and other Node.js features
   "node_compat": true,
 
-  // KV namespaces will be added in issue #11
-  // "kv_namespaces": [],
+  // KV namespaces for MCP OAuth and Google tokens storage
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "3c26e5084d954590962b23e904dd2000"
+    },
+    {
+      "binding": "GOOGLE_TOKENS_KV",
+      "id": "78fde26001e547f3823bf30de15ed49b"
+    }
+  ]
 
   // Durable Objects will be configured in issue #13
   // "durable_objects": {
