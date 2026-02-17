@@ -325,21 +325,30 @@ Total: {n} findings → {n} issues → {n} fix cycles
 
 **What:** Verify the UI/output appears correctly and completely.
 
+**Approach:** Human visual inspection + Playwright automated screenshot capture
+
+**Inspired by:** Agent OS visual verification practices (Brian Casel, Builder Methods)
+
 **Collection procedure:**
 
 1. Read the PRD's functional requirements. For each requirement that has a
    visual or structural component, generate a checklist item:
    `[ ] {description of what should be visible/present}`
 2. Group checklist items by feature area or PRD section.
-3. Present the complete checklist to the human.
-4. Human inspects the running application, fills in the checklist, and adds
+3. **Automated Screenshot Capture (if web-based):**
+   - Use Playwright to automatically capture key screens (see Playwright Setup below)
+   - Store screenshots in `docs/visuals/` for evidence and baseline comparison
+   - Useful for: OAuth flows, error pages, dashboards, form layouts
+4. Present the complete checklist to the human.
+5. Human inspects the running application, fills in the checklist, and adds
    notes for any failures.
-5. If the human provides screenshots, analyze them for structural issues.
-6. Convert each failed checklist item into a finding in `qa-findings.md`.
+6. If the human provides screenshots, analyze them for structural issues.
+7. Convert each failed checklist item into a finding in `qa-findings.md`.
 
 **Gate criteria:**
 - Human confirms all checklist items pass (or all failures are filed as
   issues and subsequently fixed and verified).
+- Automated screenshots captured for key screens (if applicable)
 
 **Human involvement:** Fill checklist. This is the heaviest human-input layer.
 
@@ -347,6 +356,55 @@ Total: {n} findings → {n} issues → {n} fix cycles
 FUNCTION layer's automated test commands and manual checklist. Do NOT present
 the FUNCTION checklist yet — just have it ready so there's no delay when the
 human finishes RENDER.
+
+#### Playwright Setup (for Web-Based Projects)
+
+**When to use:**
+- Web applications with UI components
+- OAuth flows requiring visual verification
+- Error pages and notifications
+- Visual regression testing
+
+**Installation:**
+```bash
+npm install -D @playwright/test
+npx playwright install  # Install browser engines
+```
+
+**Example: Capture OAuth Flow**
+```typescript
+// tests/visual/oauth.spec.ts
+import { test, expect } from '@playwright/test';
+
+test('OAuth consent screen renders', async ({ page }) => {
+  await page.goto('https://example.workers.dev/google/login');
+  await page.waitForURL(/accounts\.google\.com/);
+  await page.screenshot({ path: 'docs/visuals/oauth/consent.png', fullPage: true });
+  await expect(page.locator('h1')).toContainText('Sign in');
+});
+```
+
+**Example: Visual Regression**
+```typescript
+test('Dashboard layout unchanged', async ({ page }) => {
+  await page.goto('https://example.workers.dev/dashboard');
+  await expect(page).toHaveScreenshot('dashboard.png', { maxDiffPixels: 100 });
+});
+```
+
+**Run Playwright:**
+```bash
+npx playwright test                    # All tests
+npx playwright test --headed           # With visible browser
+npx playwright show-report             # View HTML report
+```
+
+**Screenshot Storage:**
+- **QA Evidence:** `docs/visuals/{feature}/` (e.g., `docs/visuals/oauth/`)
+- **Baselines:** `tests/visual/__screenshots__/`
+- **Reports:** `playwright-report/`
+
+See `process/standards/testing/test-writing.md` for detailed Playwright examples.
 
 ### FUNCTION
 

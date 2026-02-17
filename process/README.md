@@ -1,26 +1,54 @@
 # Development Process
 
-Reusable prompt templates for AI-assisted software development.
+Structured workflow for AI-assisted software development with autonomous agent execution.
+
+**Created by:** Sense and Motion (Vancouver, BC)
+**Enhanced with:** Best practices from Agent OS by Brian Casel (Builder Methods)
+**Status:** Production-validated (calendar-mcp: 63 issues, 298 tests, 90.71% coverage, ~7 hours)
+
+## Quick Reference
+
+| Scenario | Start Here | Next Steps |
+|----------|------------|------------|
+| 🆕 New project | `ideate.md` (CREATE) | → problem-statement.md → create-prd.md |
+| ✨ Add feature | `ideate.md` (EVOLVE) | → feature-proposal.md → create-prd.md |
+| 🐛 Fix bug (small) | Fix directly | No process needed (<50 lines, single file) |
+| 🐛 Fix bug (large) | `ideate.md` (MAINTAIN) | → bug-analysis.md → create-prd.md |
+| 🔧 Refactor | `ideate.md` (REFACTOR) | → refactoring-plan.md → create-prd.md (Phase 1) |
+
+## Quick Start
+
+**👉 Always start here:** `process/ideate.md`
+
+Whether you're building a new project, adding features, fixing bugs, or refactoring, **IDEATE** is your entry point.
+
+**New to this process?** Read `process/ENHANCEMENTS.md` for overview and `standards/ATTRIBUTION.md` for credits.
 
 ## Pipeline
 
 ```
-create-prd.md  →  create-tdd.md  →  create-issues.md  →  agents execute issues
-     |                  |                   |
-  WHAT to build      HOW to build it    WHO does what
-  (problem, FRs,     (stack, schemas,   (GitHub Issues
-   acceptance         contracts, dir     w/ exit criteria)
-   criteria)          structure)
+   IDEATE       →  create-prd  →  create-tdd  →  create-issues  →  execute-issues  →  first-run-qa
+(start here!)      (WHAT)         (HOW)         (WHO)            (parallel)         (verify)
+
+🆕 CREATE          Problem        Tech          GitHub Issues    6 agents          BUILD
+✨ EVOLVE          definition,    stack,        with             implement         BOOT
+🐛 MAINTAIN        FRs,           schemas,      dependencies     63 issues in      RENDER
+🔧 REFACTOR        acceptance     contracts,                     ~7 hours          FUNCTION
+                   criteria       directory                                        POLISH
+                                  structure
 ```
 
-## Artifacts
+## Process Files
 
-| Template | Purpose |
-|---|---|
-| `create-prd.md` | Generate a Product Requirements Document from a raw idea |
-| `create-tdd.md` | Generate a Technical Design Document from a PRD |
-| `create-issues.md` | Decompose a PRD + TDD into self-contained GitHub Issues |
-| `first-run-qa.md` | Structured QA process from "implemented" to "works correctly" |
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| **`ideate.md`** | **START HERE** - Requirements gathering and problem definition | Always (CREATE, EVOLVE, MAINTAIN, REFACTOR) |
+| `create-prd.md` | Generate Product Requirements Document | After ideation, defines WHAT to build |
+| `create-tdd.md` | Generate Technical Design Document | After PRD, defines HOW to build |
+| `create-issues.md` | Decompose PRD+TDD into GitHub Issues with dependencies | After TDD, defines WHO does what |
+| `execute-issues.md` | Orchestrate parallel agent execution | After issues created, implements code |
+| `first-run-qa.md` | Systematic 5-layer QA process | After implementation, verifies correctness |
+| `agent-observability.md` | Monitor agent progress and token usage | During execution, tracks health |
 
 ## Quality Assurance
 
@@ -56,11 +84,22 @@ This automatically:
 
 Each layer gates the next. The process is stateful and survives context depletion.
 
-## Standards
+## Standards Library
 
-- `docs/standards/general.md` — language-agnostic coding standards (always loaded)
-- Language-specific addenda live as Claude Code skills (`.claude/skills/`)
-  so they are progressively disclosed when the language is in use
+**Location:** `process/standards/`
+
+**Always apply:**
+- `standards/global/coding-style.md` - Naming, formatting, DRY principles
+- `standards/global/error-handling.md` - User-friendly errors, retry strategies
+- `standards/global/conventions.md` - Project structure, file organization
+
+**Apply when relevant:**
+- `standards/backend/api.md` - REST API design, versioning
+- `standards/backend/models.md` - Data modeling, validation
+- `standards/frontend/components.md` - Component architecture, state management
+- `standards/testing/test-writing.md` - Coverage strategy, mocking practices
+
+**Attribution:** Standards adapted from Agent OS by Brian Casel (Builder Methods). See `process/standards/ATTRIBUTION.md`.
 
 ## Greenfield vs. Brownfield
 
