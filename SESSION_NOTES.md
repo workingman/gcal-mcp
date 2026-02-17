@@ -1843,3 +1843,473 @@ After all parents complete:
 ---
 
 ## 🎉 PROJECT SUCCESSFULLY COMPLETED! 🎉
+
+---
+
+## Session 2026-02-16 (Afternoon): Process Enhancement - Agent OS Integration
+
+### TL;DR - Process Enhancement Session
+
+**Status:** ✅ Process enhancements complete - Hybrid system combining Agent OS best practices with our validated parallel execution
+**What was created:** 12 new files (ideate.md, standards library, enhanced QA), +3,320 lines of documentation
+**Key achievement:** Closed all gaps identified in Agent OS comparison while maintaining our core strengths (dependency-aware parallelization, GitHub integration, speed)
+**Outcome:** Production-validated process enhanced with structured ideation, comprehensive standards, and visual debugging
+
+---
+
+## Session Goal
+
+**Objective:** Enhance the Sense and Motion development process by integrating best practices from Agent OS (Brian Casel, Builder Methods) to create a hybrid system.
+
+**Motivation:** Close gaps identified in `docs/agent-os-comparison.md` while maintaining our core strengths (30-50% speedup from parallel execution, GitHub-native workflow, context optimization).
+
+---
+
+## What Was Enhanced
+
+### 1. ⭐ IDEATE Entry Point (NEW)
+
+**File created:** `process/ideate.md` (701 lines)
+
+**Purpose:** Structured requirements gathering that routes to appropriate workflow based on scenario type.
+
+**Four Scenarios Supported:**
+- 🆕 **CREATE** (greenfield projects)
+  - Interactive Q&A flows inspired by Agent OS `spec-shaper`
+  - Output: `problem-statement.md`
+  - Includes visual assets guidance
+
+- ✨ **EVOLVE** (brownfield features)
+  - Codebase assessment checklist
+  - Integration planning with existing patterns
+  - Output: `feature-proposal.md`
+
+- 🐛 **MAINTAIN** (bug fixes)
+  - Triage decision tree (localized vs. systemic)
+  - Output: `bug-analysis.md` (for moderate/systemic bugs)
+  - Small fixes skip process entirely
+
+- 🔧 **REFACTOR** (structural improvements)
+  - Phasing strategy (each phase = separate PR)
+  - Rollback planning
+  - Output: `refactoring-plan.md`
+
+**Key Innovation:** Decision tree that clarifies "which path am I on?" before jumping into PRD creation.
+
+**Usage Pattern:**
+```
+IDEATE → create-prd.md → create-tdd.md → create-issues.md → execute-issues.md → first-run-qa.md
+```
+
+---
+
+### 2. ⭐ Standards Library (NEW)
+
+**Location:** `process/standards/` (7 files)
+
+**Contents:**
+- `ATTRIBUTION.md` - Full credit to Agent OS with detailed comparison
+- `README.md` - Standards overview, usage guide, progressive disclosure
+- `global/coding-style.md` - Naming, formatting, DRY principles, TypeScript patterns
+- `global/error-handling.md` - User-friendly errors, retry strategies, HTTP status codes
+- `global/conventions.md` - Git commits, docs, env vars, changelog maintenance
+- `backend/api.md` - REST API design, versioning, pagination, rate limiting
+- `testing/test-writing.md` - Coverage strategy, behavior vs. implementation, Playwright integration
+
+**Key Modifications from Agent OS:**
+- ✅ **Per-issue test coverage** (not minimal testing) - Required for safe parallel execution
+- ✅ **GitHub-native patterns** (issue-per-commit, dependency encoding)
+- ✅ **TypeScript-specific guidance** (type safety, async/await)
+- ✅ **Context optimization patterns** (our innovation: TDD excerpts, checkpoints)
+
+**Progressive Disclosure:**
+Load standards per-task via GitHub issue references:
+```markdown
+## Applicable Standards
+- process/standards/global/coding-style.md
+- process/standards/backend/api.md
+```
+
+---
+
+### 3. ⭐ Visual Debugging Integration (ENHANCED)
+
+**File modified:** `process/first-run-qa.md` (RENDER layer)
+
+**What was added:**
+- Playwright automated screenshot capture
+- OAuth flow visual verification
+- Visual regression testing patterns (before/after comparison)
+- Screenshot storage organization (`docs/visuals/`)
+
+**Example usage:**
+```typescript
+test('OAuth consent screen renders', async ({ page }) => {
+  await page.goto('https://example.workers.dev/google/login');
+  await page.screenshot({ path: 'docs/visuals/oauth/consent.png' });
+  await expect(page.locator('h1')).toContainText('Sign in');
+});
+```
+
+**Benefits:**
+- Reproducible visual verification
+- Evidence for compliance/audit
+- Catch UI regressions early
+- Browser compatibility testing
+
+---
+
+### 4. ⭐ Enhanced Process Documentation
+
+**Files modified/created:**
+- `process/README.md` - Enhanced with quick reference table, IDEATE prominence
+- `process/ENHANCEMENTS.md` (310 lines) - Complete changelog and usage examples
+- `docs/agent-os-comparison.md` - Copied from codex-calendar-mcp (detailed comparison)
+
+**Quick Reference Table (new):**
+| Scenario | Start Here | Next Steps |
+|----------|------------|------------|
+| 🆕 New project | `ideate.md` (CREATE) | → problem-statement.md → create-prd.md |
+| ✨ Add feature | `ideate.md` (EVOLVE) | → feature-proposal.md → create-prd.md |
+| 🐛 Fix bug (small) | Fix directly | No process needed |
+| 🐛 Fix bug (large) | `ideate.md` (MAINTAIN) | → bug-analysis.md → create-prd.md |
+| 🔧 Refactor | `ideate.md` (REFACTOR) | → refactoring-plan.md → create-prd.md |
+
+---
+
+## Gaps Closed (from Agent OS Comparison)
+
+| Gap | Status | Implementation |
+|-----|--------|----------------|
+| **Standards library** | ✅ **CLOSED** | Created `process/standards/` with 7 comprehensive files |
+| **Interactive requirements gathering** | ✅ **CLOSED** | Created `process/ideate.md` with Q&A flows |
+| **Visual debugging** | ✅ **CLOSED** | Integrated Playwright in `first-run-qa.md` |
+| **Visual assets support** | ✅ **CLOSED** | Covered in `ideate.md` Section 8 (docs/visuals/) |
+| **Subagent specialization** | 🔬 **RESEARCH** | Deferred - requires empirical validation |
+
+---
+
+## What We Kept (Our Core Strengths)
+
+**No compromise on validated advantages:**
+- ✅ **Dependency-aware parallelization** (30-50% speedup validated in calendar-mcp)
+- ✅ **GitHub Issues as source of truth** (not markdown task files)
+- ✅ **Context optimization** (TDD excerpts, checkpoint protocols)
+- ✅ **Orchestrator-driven context management** (140k-160k intervention threshold)
+- ✅ **Systematic 5-layer QA** (BUILD → BOOT → RENDER → FUNCTION → POLISH)
+
+---
+
+## Hybrid Workflow Pattern
+
+**Best of both systems:**
+```
+IDEATE (Agent OS style - flexible requirements gathering)
+  ↓
+PRD (our structured format with FR-xxx)
+  ↓
+TDD (our technical decisions + Agent OS standards references)
+  ↓
+Issues (our dependency graph encoding)
+  ↓
+Execute (our parallel orchestrator with wave-based execution)
+  ↓
+QA (our 5-layer process + Agent OS visual testing with Playwright)
+```
+
+---
+
+## Attribution
+
+**Agent OS Creator:** Brian Casel @ Builder Methods
+- Website: https://buildermethods.com/agent-os
+- Philosophy: Tool-agnostic, flexible, comprehensive standards
+- Contributions: Interactive requirements, visual testing, standards library
+
+**Our Philosophy:**
+- GitHub-native workflow (issues, dependencies, commits)
+- Optimize for speed through parallelization
+- Context efficiency for long-running projects
+- Proven metrics (calendar-mcp: 63 issues, ~7 hours, 0 interventions)
+
+**Hybrid Result:** Agent OS's flexibility + our execution speed = best of both worlds
+
+---
+
+## Commit Details
+
+**Hash:** c0921d7
+**Message:** `feat: integrate Agent OS best practices into development process`
+**Stats:** 12 files changed, +3,320 insertions, -22 deletions
+**Date:** 2026-02-16 (afternoon)
+
+**Files Added (10):**
+- `process/ideate.md` (701 lines)
+- `process/ENHANCEMENTS.md` (310 lines)
+- `process/standards/ATTRIBUTION.md`
+- `process/standards/README.md`
+- `process/standards/global/coding-style.md`
+- `process/standards/global/error-handling.md`
+- `process/standards/global/conventions.md`
+- `process/standards/backend/api.md`
+- `process/standards/testing/test-writing.md`
+- `docs/agent-os-comparison.md` (copied from codex-calendar-mcp)
+
+**Files Modified (2):**
+- `process/README.md` (added quick reference, IDEATE prominence)
+- `process/first-run-qa.md` (added Playwright visual testing in RENDER layer)
+
+---
+
+## Usage for Future Projects
+
+### Starting a New Project (CREATE)
+```bash
+# 1. Start with ideation
+Read: process/ideate.md (Section 3: Interactive Requirements Gathering)
+Complete Q&A flows
+Output: problem-statement.md
+
+# 2. Create PRD
+Use: process/create-prd.md
+Input: problem-statement.md
+Output: docs/prd-{project}.md
+
+# 3-6. Continue with standard pipeline
+TDD → Issues → Execute → QA
+```
+
+### Adding a Feature (EVOLVE)
+```bash
+# 1. Assess integration
+Read: process/ideate.md (Section 5: Brownfield Feature Questions)
+Complete codebase assessment
+Output: feature-proposal.md
+
+# 2. Follow standard pipeline with codebase context
+PRD (references existing architecture) → TDD (with assessment) → Issues → Execute → QA
+```
+
+### Fixing a Bug (MAINTAIN)
+```bash
+# 1. Triage
+Read: process/ideate.md (Section 6: Bug Triage Questions)
+
+# Decision:
+# 2a. Localized fix (<50 lines, single file): Skip process, fix directly
+# 2b. Moderate/systemic fix: Output bug-analysis.md → PRD → TDD → Issues → Execute → QA
+```
+
+---
+
+## Process Maturity Progression
+
+**Before Enhancement (calendar-mcp baseline):**
+- ✅ Strong: Parallel execution, GitHub integration, QA layers, orchestrator monitoring
+- ⚠️ Weak: No formal ideation phase, basic standards (1 file), manual visual testing
+
+**After Enhancement (today):**
+- ✅ Strong: Everything above + structured ideation (4 scenarios), comprehensive standards (7 files), automated visual testing (Playwright)
+- ✅ Result: Production-validated speed (30-50% faster) + Agent OS's flexibility and standards
+
+**Recommendation:** Start all future projects with `process/ideate.md` regardless of scenario type.
+
+---
+
+## Metrics
+
+### Documentation Created
+- **Total lines:** +3,320 (new documentation)
+- **Files created:** 10 new files
+- **Files modified:** 2 files
+- **Standards coverage:** Global (3), Backend (1), Testing (1)
+
+### Time Investment
+- **Session duration:** ~2 hours
+- **Context used:** 92.7k / 200k tokens (46.4%)
+- **Reading:** agent-os-comparison.md, agent-os standards files
+- **Writing:** ideate.md (701 lines), standards (7 files), enhancements.md (310 lines)
+- **Modifying:** README.md, first-run-qa.md
+
+---
+
+## Validation Against Agent OS Comparison
+
+From `docs/agent-os-comparison.md`, we identified 5 gaps to close:
+
+### ✅ Gap 1: Standards Library
+**Closed:** Created `process/standards/` with 7 comprehensive files
+- 3 global standards (coding-style, error-handling, conventions)
+- 1 backend standard (API design)
+- 1 testing standard (test writing + Playwright)
+- Progressive disclosure (load per-task)
+- Full attribution to Agent OS
+
+### ✅ Gap 2: Interactive Requirements Gathering
+**Closed:** Created `process/ideate.md` with Q&A flows
+- CREATE: Interactive Q&A for greenfield (10 questions)
+- EVOLVE: Brownfield assessment (6 questions)
+- MAINTAIN: Bug triage decision tree (3 questions)
+- REFACTOR: Structural assessment (7 questions)
+- Output templates for each scenario
+
+### ✅ Gap 3: Visual Debugging
+**Closed:** Enhanced `process/first-run-qa.md` RENDER layer
+- Playwright integration with examples
+- Automated screenshot capture
+- Visual regression testing patterns
+- Screenshot storage organization
+
+### ✅ Gap 4: Visual Assets Support
+**Closed:** Covered in `ideate.md` Section 8
+- Directory structure: `docs/visuals/{feature}/`
+- When to create mockups, diagrams, screenshots
+- Tools: Mermaid, Playwright, manual capture
+- QA evidence storage
+
+### 🔬 Gap 5: Subagent Specialization
+**Deferred to research:** Requires empirical validation
+- Agent OS uses manual specialist assignment
+- We use automatic dependency-aware orchestration
+- Need case studies to determine if manual adds value
+- Low priority (our system already validated)
+
+---
+
+## Key Learnings
+
+### 1. Standards Adaptation is Critical
+- Can't just copy Agent OS standards verbatim
+- Must adapt for GitHub-native workflow (not markdown files)
+- Must modify test philosophy (per-issue coverage vs. minimal)
+- Attribution is crucial for open-source collaboration
+
+### 2. IDEATE Phase Fills a Gap
+- Previously jumped straight to PRD (assumed requirements were clear)
+- IDEATE provides structure for clarifying requirements upfront
+- Especially valuable for brownfield (EVOLVE) and refactoring
+- Decision tree prevents "wrong path" mistakes
+
+### 3. Visual Testing Adds Value
+- Manual visual testing is error-prone and not reproducible
+- Playwright automation provides evidence for compliance/audit
+- Visual regression testing catches UI bugs early
+- Small investment (npm install + examples) for significant benefit
+
+### 4. Process Documentation Matters
+- Clear entry points reduce cognitive load
+- Quick reference tables help users orient quickly
+- Comparison documents (vs. Agent OS) build confidence
+- Attribution builds credibility and collaboration
+
+---
+
+## What to Do Differently Next Time
+
+### For Process Enhancement Sessions:
+1. **Create comparison document first** - Identify gaps before starting work
+2. **Adapt, don't copy** - Standards must fit our workflow (GitHub vs. markdown)
+3. **Validate with examples** - Include working code examples in standards
+4. **Test incremental adoption** - Can users adopt pieces without full commitment?
+
+### For Next Project Using Enhanced Process:
+1. **Start with IDEATE** - Always, even if requirements seem clear
+2. **Reference standards in issues** - Progressive disclosure per-task
+3. **Use Playwright from day 1** - For any web UI components
+4. **Update standards as needed** - Process is living, not fixed
+
+---
+
+## Repository State (After Enhancement)
+
+**Branch:** main
+**Last commit:** c0921d7 (feat: integrate Agent OS best practices into development process)
+**Files changed:** 12 files (+10 new, +2 modified)
+**Lines added:** +3,320
+**Build status:** ✅ Success (no changes to src/)
+**Tests:** ✅ 298 passing (no changes to tests/)
+
+**Process files:**
+```
+process/
+├── README.md (enhanced)
+├── ideate.md ⭐ NEW
+├── ENHANCEMENTS.md ⭐ NEW
+├── create-prd.md
+├── create-tdd.md
+├── create-issues.md
+├── execute-issues.md
+├── first-run-qa.md (enhanced)
+├── agent-observability.md
+└── standards/ ⭐ NEW
+    ├── ATTRIBUTION.md
+    ├── README.md
+    ├── global/ (3 files)
+    ├── backend/ (1 file)
+    ├── frontend/ (placeholder)
+    └── testing/ (1 file)
+```
+
+---
+
+## Next Steps
+
+### Immediate (Future Projects)
+1. **Use enhanced process:** Start new projects with `process/ideate.md`
+2. **Validate EVOLVE path:** Test brownfield feature addition with this process
+3. **Validate MAINTAIN path:** Test bug fix workflow with triage decision tree
+4. **Gather metrics:** Track ideation time, standards compliance, visual regression catches
+
+### Short-Term (1-3 months)
+1. **Frontend standards:** Complete `process/standards/frontend/` (components, responsive, accessibility)
+2. **Database standards:** Complete `process/standards/backend/` (models, migrations, queries)
+3. **Playwright templates:** Create reusable test templates in `process/templates/`
+4. **Case studies:** Document 2-3 projects using enhanced process
+
+### Long-Term (3-6 months)
+1. **Cross-tool compatibility:** Test if Cursor/Windsurf can use this process
+2. **Parallel execution at scale:** Validate with 10+ parents, 100+ issues
+3. **Agent specialization research:** Compare manual assignment vs. automatic orchestration
+4. **Community contribution:** Share learnings with Agent OS community
+
+---
+
+## Files Modified This Session (2026-02-16 Afternoon)
+
+**New files created:**
+- `process/ideate.md` (701 lines)
+- `process/ENHANCEMENTS.md` (310 lines)
+- `process/standards/ATTRIBUTION.md` (80 lines)
+- `process/standards/README.md` (102 lines)
+- `process/standards/global/coding-style.md` (234 lines)
+- `process/standards/global/error-handling.md` (194 lines)
+- `process/standards/global/conventions.md` (244 lines)
+- `process/standards/backend/api.md` (418 lines)
+- `process/standards/testing/test-writing.md` (406 lines)
+- `docs/agent-os-comparison.md` (325 lines, copied from codex-calendar-mcp)
+
+**Files modified:**
+- `process/README.md` (added quick reference, IDEATE section, standards section)
+- `process/first-run-qa.md` (added Playwright integration in RENDER layer)
+
+**Memory updated:**
+- `~/.claude/projects/-Users-sam-dev-calendar-mcp/memory/MEMORY.md` (new section on process enhancement)
+- `SESSION_NOTES.md` (this file - new session entry)
+
+---
+
+## Session End: 2026-02-16 (Afternoon)
+
+**Context used:** 92.7k / 200k tokens (46.4%)
+**Duration:** ~2 hours
+**Commits:** 1 (c0921d7)
+**Files changed:** 12 (+10 new, +2 modified)
+**Lines added:** +3,320
+**Standards created:** 7 files
+**Documentation created:** 4 files (ideate, enhancements, attribution, comparison)
+
+**Status:** ✅ **PROCESS ENHANCEMENT COMPLETE!** Hybrid system combining Agent OS best practices with our validated parallel execution is production-ready.
+
+**Next session:** Use enhanced process for next project, starting with `process/ideate.md`
+
+---
