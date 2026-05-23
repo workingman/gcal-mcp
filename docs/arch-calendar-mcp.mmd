@@ -1,0 +1,52 @@
+graph TB
+    subgraph "Client Layer"
+        CD[Claude Desktop]
+        OtherMCP[Other MCP Clients]
+    end
+
+    subgraph "Cloudflare Workers"
+        subgraph "MCP Server (Durable Object)"
+            MCPTools[MCP Tools Layer]
+            SessionVal[Session Validator]
+            TokenMgr[Token Manager<br/>Encrypt/Decrypt]
+        end
+
+        subgraph "Hono Routes"
+            GoogleOAuth[Google OAuth Routes<br/>/google/auth<br/>/google/callback]
+            MCPOAuth[MCP OAuth Routes<br/>/authorize<br/>/token]
+            Status[Status Routes]
+        end
+    end
+
+    subgraph "Cloudflare Storage"
+        KV[(KV Storage<br/>Encrypted Tokens)]
+        Secrets[Secrets<br/>Encryption Keys<br/>Google Client Creds]
+    end
+
+    subgraph "Google APIs"
+        CalAPI[Google Calendar API<br/>/calendar/v3]
+        OAuthAPI[Google OAuth<br/>Token Exchange]
+    end
+
+    CD -->|MCP Protocol| MCPOAuth
+    OtherMCP -->|MCP Protocol| MCPOAuth
+
+    MCPOAuth -->|User Identity| MCPTools
+    MCPTools -->|Validate Session| SessionVal
+    SessionVal -->|Fetch Encrypted Token| KV
+    SessionVal -->|Decrypt Token| TokenMgr
+    TokenMgr -->|Read Keys| Secrets
+
+    MCPTools -->|API Calls| CalAPI
+    MCPTools -->|Refresh Token| OAuthAPI
+
+    GoogleOAuth -->|Exchange Code| OAuthAPI
+    GoogleOAuth -->|Store Encrypted| TokenMgr
+    TokenMgr -->|Write to KV| KV
+
+    CD -->|Browser Redirect| GoogleOAuth
+
+    style KV fill:#f9f,stroke:#333
+    style Secrets fill:#ff9,stroke:#333
+    style TokenMgr fill:#9f9,stroke:#333
+    style SessionVal fill:#9f9,stroke:#333

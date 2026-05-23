@@ -1,0 +1,40 @@
+{
+  // Cloudflare Workers configuration for Calendar MCP Server
+  "name": "calendar-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-02-01",
+
+  // Node.js compatibility enabled via compatibility flag
+  "compatibility_flags": ["nodejs_compat"],
+
+  // KV namespaces for MCP OAuth and Google tokens storage
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "3c26e5084d954590962b23e904dd2000"
+    },
+    {
+      "binding": "GOOGLE_TOKENS_KV",
+      "id": "78fde26001e547f3823bf30de15ed49b"
+    }
+  ],
+
+  // Durable Objects for MCP server instances
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CALENDAR_MCP",
+        "class_name": "CalendarMCP",
+        "script_name": "calendar-mcp"
+      }
+    ]
+  },
+
+  // Migration for Durable Objects
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CalendarMCP"]
+    }
+  ]
+}
